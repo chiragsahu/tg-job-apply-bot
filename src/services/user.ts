@@ -91,3 +91,47 @@ export async function hasSmtp(telegramId: number): Promise<boolean> {
   );
   return user !== null;
 }
+
+/**
+ * Removes the stored resume from the user's document.
+ */
+export async function deleteResume(telegramId: number): Promise<void> {
+  const col = await collection();
+  await col.updateOne(
+    { telegramId },
+    { $unset: { resume: "" }, $set: { updatedAt: new Date() } }
+  );
+}
+
+/**
+ * Removes the stored SMTP configuration from the user's document.
+ * The user will need to run /setup again to send emails.
+ */
+export async function deleteSmtp(telegramId: number): Promise<void> {
+  const col = await collection();
+  await col.updateOne(
+    { telegramId },
+    { $unset: { smtp: "" }, $set: { updatedAt: new Date() } }
+  );
+}
+
+/**
+ * Removes the default cover letter template from the user's document.
+ */
+export async function deleteTemplate(telegramId: number): Promise<void> {
+  const col = await collection();
+  await col.updateOne(
+    { telegramId },
+    { $unset: { "templates.default": "" }, $set: { updatedAt: new Date() } }
+  );
+}
+
+/**
+ * Permanently deletes the user's entire document from MongoDB.
+ * Irreversible. Used by /reset.
+ */
+export async function deleteUser(telegramId: number): Promise<void> {
+  const col = await collection();
+  await col.deleteOne({ telegramId });
+}
+
