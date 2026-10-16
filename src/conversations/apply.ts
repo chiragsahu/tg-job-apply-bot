@@ -1,6 +1,6 @@
 import { InlineKeyboard } from "grammy";
 import type { BotContext, MyConversation } from "../types.js";
-import { getUser, updateResume } from "../services/user.js";
+import { getUser, updateResume, getCandidateProfile } from "../services/user.js";
 import { downloadTelegramFile, extractResumeText } from "../services/pdf.js";
 import { tailorApplication } from "../services/ai.js";
 import { sendApplicationEmail } from "../services/mailer.js";
@@ -128,11 +128,15 @@ export async function applyFlow(
 
   let application: { subject: string; body: string };
   try {
+    const candidateProfile = await conversation.external(() =>
+      getCandidateProfile(telegramId)
+    );
     application = await conversation.external(() =>
       tailorApplication(
         resume.text,
         jobDesc,
-        user.templates.default ?? ""
+        user.templates.default ?? "",
+        candidateProfile
       )
     );
   } catch (err) {

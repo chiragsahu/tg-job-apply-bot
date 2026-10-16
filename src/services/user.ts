@@ -1,6 +1,13 @@
+import { randomUUID } from "node:crypto";
 import { type Collection } from "mongodb";
 import { getDb } from "./db.js";
-import type { UserDoc, UserSmtp, UserResume } from "../models/User.js";
+import type {
+  UserDoc,
+  UserSmtp,
+  UserResume,
+  CandidateProfile,
+  UserRole,
+} from "../models/User.js";
 
 function collection(): Promise<Collection<UserDoc>> {
   return getDb().then((db) => db.collection<UserDoc>("users"));
@@ -134,4 +141,193 @@ export async function deleteUser(telegramId: number): Promise<void> {
   const col = await collection();
   await col.deleteOne({ telegramId });
 }
+
+// ── Candidate Profile Operations ─────────────────────────────────────────────
+
+/**
+ * Gets the candidate profile details for a user.
+ */
+export async function getCandidateProfile(
+  telegramId: number
+): Promise<CandidateProfile | undefined> {
+  const col = await collection();
+  const user = await col.findOne({ telegramId }, { projection: { profile: 1 } });
+  return user?.profile;
+}
+
+/**
+ * Updates or merges candidate profile fields.
+ */
+export async function updateCandidateProfile(
+  telegramId: number,
+  profileUpdates: Partial<CandidateProfile>
+): Promise<void> {
+  const col = await collection();
+  const setObj: Record<string, unknown> = {
+    updatedAt: new Date(),
+    "profile.updatedAt": new Date(),
+  };
+
+  for (const [key, value] of Object.entries(profileUpdates)) {
+    if (value !== undefined) {
+      setObj[`profile.${key}`] = value;
+    }
+  }
+
+  await col.updateOne({ telegramId }, { $set: setObj });
+}
+
+// ── Role & 1-to-1 Resume Operations ──────────────────────────────────────────
+
+/**
+ * Gets all roles configured for a user.
+ */
+export async function getRoles(telegramId: number): Promise<UserRole[]> {
+  const col = await collection();
+  const user = await col.findOne({ telegramId }, { projection: { roles: 1 } });
+  return user?.roles ?? [];
+}
+
+/**
+ * Gets a specific role by roleId.
+ */
+export async function getRole(
+  telegramId: number,
+  roleId: string
+): Promise<UserRole | null> {
+  const col = await collection();
+  const user = await col.findOne(
+    { telegramId, "roles.id": roleId },
+    { projection: { "roles.$": 1 } }
+  );
+  return user?.roles?.[0] ?? null;
+}
+
+/**
+ * Adds a new role to the user's roles list with optional role-specific screening details.
+ */
+export async function addRole(
+  telegramId: number,
+  name: string,
+  details?: {
+    relevantExperience?: string | undefined;
+    expectedCtc?: string | undefined;
+    holdingOffer?: string | undefined;
+  }
+): Promise<UserRole> {
+  const col = await collection();
+  const now = new Date();
+  const newRole: UserRole = {
+    id: randomUUID(),
+    name: name.trim(),
+    ...(details?.relevantExperience !== undefined && { relevantExperience: details.relevantExperience }),
+    ...(details?.expectedCtc !== undefined && { expectedCtc: details.expectedCtc }),
+    ...(details?.holdingOffer !== undefined && { holdingOffer: details.holdingOffer }),
+    createdAt: now,
+    updatedAt: now,
+  };
+
+  await col.updateOne(
+    { telegramId },
+    {
+      $push: { roles: newRole },
+      $set: { updatedAt: now },
+    }
+  );
+
+  return newRole;
+}
+
+/**
+ * Updates role-specific screening details (relevant exp, expected CTC, holding offer) or role name.
+ */
+export async function updateRoleDetails(
+  telegramId: number,
+  roleId: string,
+  updates: {
+    name?: string | undefined;
+    relevantExperience?: string | undefined;
+    expectedCtc?: string | undefined;
+    holdingOffer?: string | undefined;
+  }
+): Promise<void> {
+  const col = await collection();
+  const now = new Date();
+  const setObj: Record<string, unknown> = {
+    "roles.$.updatedAt": now,
+    updatedAt: now,
+  };
+
+  if (updates.name !== undefined) setObj["roles.$.name"] = updates.name;
+  if (updates.relevantExperience !== undefined) setObj["roles.$.relevantExperience"] = updates.relevantExperience;
+  if (updates.expectedCtc !== undefined) setObj["roles.$.expectedCtc"] = updates.expectedCtc;
+  if (updates.holdingOffer !== undefined) setObj["roles.$.holdingOffer"] = updates.holdingOffer;
+
+  await col.updateOne(
+    { telegramId, "roles.id": roleId },
+    { $set: setObj }
+  );
+}
+
+
+/**
+ * Deletes a role by roleId.
+ */
+export async function deleteRole(
+  telegramId: number,
+  roleId: string
+): Promise<void> {
+  const col = await collection();
+  await col.updateOne(
+    { telegramId },
+    {
+      $pull: { roles: { id: roleId } },
+      $set: { updatedAt: new Date() },
+    }
+  );
+}
+
+/**
+ * Attaches or replaces a resume on a specific role (1-to-1 relationship).
+ */
+export async function attachResumeToRole(
+  telegramId: number,
+  roleId: string,
+  resume: UserResume
+): Promise<void> {
+  const col = await collection();
+  const now = new Date();
+  await col.updateOne(
+    { telegramId, "roles.id": roleId },
+    {
+      $set: {
+        "roles.$.resume": resume,
+        "roles.$.updatedAt": now,
+        updatedAt: now,
+      },
+    }
+  );
+}
+
+/**
+ * Removes the attached resume from a specific role without deleting the role.
+ */
+export async function deleteRoleResume(
+  telegramId: number,
+  roleId: string
+): Promise<void> {
+  const col = await collection();
+  const now = new Date();
+  await col.updateOne(
+    { telegramId, "roles.id": roleId },
+    {
+      $unset: { "roles.$.resume": "" },
+      $set: {
+        "roles.$.updatedAt": now,
+        updatedAt: now,
+      },
+    }
+  );
+}
+
 

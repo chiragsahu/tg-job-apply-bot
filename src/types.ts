@@ -1,14 +1,17 @@
 import type { Context, SessionFlavor } from "grammy";
 import type { ConversationFlavor, Conversation } from "@grammyjs/conversations";
+import type { UserResume } from "./models/User.js";
 
 /**
  * Session data — kept minimal. All persistent user data lives in MongoDB `users` collection.
- * grammY uses this only for active conversation flow state.
+ * grammY uses this for active conversation state and transient flow data.
  */
 export interface SessionData {
-  // Intentionally empty — grammY conversations v2 manages its own state externally
+  pendingResume?: UserResume | undefined;
+  pendingRoleId?: string | undefined;
   [key: string]: unknown;
 }
+
 
 /**
  * The bot's outer context type (used for bot.command, bot.on, etc.)
