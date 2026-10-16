@@ -23,7 +23,11 @@ import {
   attachResumeToRole,
   deleteRoleResume,
 } from "./services/user.js";
-import { downloadTelegramFile, extractResumeText } from "./services/pdf.js";
+import {
+  downloadTelegramFile,
+  extractResumeText,
+  validateResumeDocument,
+} from "./services/pdf.js";
 
 import { setupFlow } from "./conversations/setup.js";
 import { templateFlow } from "./conversations/template.js";
@@ -585,9 +589,14 @@ async function main(): Promise<void> {
   // ── Auto-handle PDF uploads anywhere in the chat ──────────────────────────
   bot.on("message:document", async (ctx) => {
     const doc = ctx.message.document;
-    if (doc.mime_type !== "application/pdf") return;
+    const validation = validateResumeDocument(doc);
+    if (!validation.valid) {
+      await ctx.reply(validation.error!);
+      return;
+    }
 
     await ctx.reply("⏳ Processing your resume...");
+
 
     try {
       const buffer = await downloadTelegramFile(doc.file_id, BOT_TOKEN!);

@@ -4,6 +4,38 @@ const require = createRequire(import.meta.url);
 // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
 const pdfParse: (buffer: Buffer) => Promise<{ text: string; numpages: number }> = require("pdf-parse");
 
+export const MAX_RESUME_SIZE_BYTES = 3 * 1024 * 1024; // 3 MB
+
+/**
+ * Validates that an uploaded document is a PDF and does not exceed 3 MB.
+ */
+export function validateResumeDocument(doc: {
+  mime_type?: string | undefined;
+  file_name?: string | undefined;
+  file_size?: number | undefined;
+}): { valid: boolean; error?: string } {
+  const isPdf =
+    doc.mime_type === "application/pdf" ||
+    (doc.file_name?.toLowerCase().endsWith(".pdf") ?? false);
+
+  if (!isPdf) {
+    return {
+      valid: false,
+      error: "❌ Invalid file format. Only PDF files (.pdf) are supported.",
+    };
+  }
+
+  if (doc.file_size && doc.file_size > MAX_RESUME_SIZE_BYTES) {
+    const sizeMb = (doc.file_size / (1024 * 1024)).toFixed(1);
+    return {
+      valid: false,
+      error: `❌ File is too large (${sizeMb} MB). Resumes must be 3 MB or smaller.`,
+    };
+  }
+
+  return { valid: true };
+}
+
 
 /**
  * Downloads a file from Telegram's CDN using the permanent file_id.

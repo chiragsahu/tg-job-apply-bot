@@ -1,7 +1,15 @@
 import { InlineKeyboard } from "grammy";
 import type { BotContext, MyConversation } from "../types.js";
-import { getUser, updateResume, getCandidateProfile } from "../services/user.js";
-import { downloadTelegramFile, extractResumeText } from "../services/pdf.js";
+import {
+  getUser,
+  updateResume,
+  getCandidateProfile,
+} from "../services/user.js";
+import {
+  downloadTelegramFile,
+  extractResumeText,
+  validateResumeDocument,
+} from "../services/pdf.js";
 import { tailorApplication } from "../services/ai.js";
 import { sendApplicationEmail } from "../services/mailer.js";
 
@@ -22,7 +30,7 @@ const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
  */
 export async function applyFlow(
   conversation: MyConversation,
-  ctx: BotContext
+  ctx: BotContext,
 ): Promise<void> {
   const telegramId = ctx.from?.id;
   const botToken = process.env["TELEGRAM_BOT_TOKEN"];
@@ -35,7 +43,7 @@ export async function applyFlow(
   if (!user?.smtp) {
     await ctx.reply(
       "⚠️ You haven't configured your email yet.\n\n" +
-        "Run /setup to connect your SMTP account first."
+        "Run /setup to connect your SMTP account first.",
     );
     return;
   }
@@ -43,15 +51,16 @@ export async function applyFlow(
   if (!user.resume) {
     await ctx.reply(
       "📄 No resume found.\n\n" +
-        "Please upload your resume PDF now, or use /resume to manage it."
+        "Please upload your resume PDF now, or use /resume to manage it.",
     );
 
     // Wait for PDF upload
     const docCtx = await conversation.waitFor("message:document");
     const doc = docCtx.message.document;
 
-    if (doc.mime_type !== "application/pdf") {
-      await ctx.reply("❌ Please upload a PDF file (.pdf).");
+    const validation = validateResumeDocument(doc);
+    if (!validation.valid) {
+      await ctx.reply(validation.error!);
       return;
     }
 
@@ -59,7 +68,7 @@ export async function applyFlow(
 
     try {
       const buffer = await conversation.external(() =>
-        downloadTelegramFile(doc.file_id, botToken)
+        downloadTelegramFile(doc.file_id, botToken),
       );
       const text = await conversation.external(() => extractResumeText(buffer));
 
@@ -69,7 +78,7 @@ export async function applyFlow(
           fileName: doc.file_name ?? "Resume.pdf",
           text,
           uploadedAt: new Date(),
-        })
+        }),
       );
 
       await ctx.reply(`✅ Resume saved: *${doc.file_name ?? "Resume.pdf"}*`, {
@@ -93,27 +102,35 @@ export async function applyFlow(
   await ctx.reply(
     "📋 *Step 1 of 3 — Job Description*\n\n" +
       "Paste the job posting, description, or requirements below:",
-    { parse_mode: "Markdown" }
+    { parse_mode: "Markdown" },
   );
 
   const jdCtx = await conversation.waitFor("message:text");
   const jobDesc = jdCtx.message.text.trim();
-  if (jobDesc === "/cancel") { await ctx.reply("❌ Cancelled."); return; }
+  if (jobDesc === "/cancel") {
+    await ctx.reply("❌ Cancelled.");
+    return;
+  }
 
   // ── Step 3: Recipient Email ─────────────────────────────────────────────
   await ctx.reply(
     "📧 *Step 2 of 3 — Recipient Email*\n\n" +
       "What is the recruiter or HR email address?",
-    { parse_mode: "Markdown" }
+    { parse_mode: "Markdown" },
   );
 
   let recipientEmail = "";
   while (!EMAIL_REGEX.test(recipientEmail)) {
     const emailCtx = await conversation.waitFor("message:text");
     const input = emailCtx.message.text.trim();
-    if (input === "/cancel") { await ctx.reply("❌ Cancelled."); return; }
+    if (input === "/cancel") {
+      await ctx.reply("❌ Cancelled.");
+      return;
+    }
     if (!EMAIL_REGEX.test(input)) {
-      await ctx.reply("⚠️ That doesn't look like a valid email. Please try again:");
+      await ctx.reply(
+        "⚠️ That doesn't look like a valid email. Please try again:",
+      );
     } else {
       recipientEmail = input;
     }
@@ -123,30 +140,34 @@ export async function applyFlow(
   const thinkingMsg = await ctx.reply(
     "🤖 *Step 3 of 3 — Generating your application...*\n\n" +
       "Analysing your resume against the job description...",
-    { parse_mode: "Markdown" }
+    { parse_mode: "Markdown" },
   );
 
   let application: { subject: string; body: string };
   try {
     const candidateProfile = await conversation.external(() =>
-      getCandidateProfile(telegramId)
+      getCandidateProfile(telegramId),
     );
     application = await conversation.external(() =>
       tailorApplication(
         resume.text,
         jobDesc,
         user.templates.default ?? "",
-        candidateProfile
-      )
+        candidateProfile,
+      ),
     );
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Unknown error";
-    await ctx.reply(`❌ AI generation failed: ${msg}\n\nPlease try /apply again.`);
+    await ctx.reply(
+      `❌ AI generation failed: ${msg}\n\nPlease try /apply again.`,
+    );
     return;
   }
 
   // Delete the "generating..." message
-  await ctx.api.deleteMessage(ctx.chat!.id, thinkingMsg.message_id).catch(() => {});
+  await ctx.api
+    .deleteMessage(ctx.chat!.id, thinkingMsg.message_id)
+    .catch(() => {});
 
   // ── Step 5: Preview ─────────────────────────────────────────────────────
   const preview =
@@ -189,7 +210,9 @@ export async function applyFlow(
   }
 
   if (action === "regenerate") {
-    await ctx.reply("🔄 Regenerating... please run /apply again to restart the flow.");
+    await ctx.reply(
+      "🔄 Regenerating... please run /apply again to restart the flow.",
+    );
     return;
   }
 
@@ -206,7 +229,7 @@ export async function applyFlow(
           resumeFileId: resume.fileId,
           resumeFileName: resume.fileName,
           botToken,
-        })
+        }),
       );
 
       await ctx.api
@@ -220,14 +243,14 @@ export async function applyFlow(
           `📌 Subject: ${application.subject}\n` +
           `📎 Attached: ${resume.fileName}\n\n` +
           `_Message ID: ${result.messageId}_`,
-        { parse_mode: "Markdown" }
+        { parse_mode: "Markdown" },
       );
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Unknown error";
       await ctx.reply(
         `❌ *Failed to send email*\n\n\`${msg}\`\n\n` +
           "Check your SMTP settings with /setup and try again.",
-        { parse_mode: "Markdown" }
+        { parse_mode: "Markdown" },
       );
     }
   }
