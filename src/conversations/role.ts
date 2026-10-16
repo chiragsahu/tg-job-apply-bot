@@ -1,5 +1,6 @@
 import type { BotContext, MyConversation } from "../types.js";
 import { addRole, attachResumeToRole } from "../services/user.js";
+import { escapeMarkdown } from "../services/format.js";
 
 /**
  * Conversation: Create Role Flow
@@ -36,13 +37,15 @@ export async function addRoleFlow(
   }
 
   if (roleName.length < 2) {
-    await ctx.reply("⚠️ Role name is too short. Please try /add_role again.");
+    await ctx.reply("⚠️ Role name is too short. Please try /add\\_role again.");
     return;
   }
 
+  const safeRoleName = roleName.replace(/[*_`]/g, "");
+
   // Step 2: Relevant experience for this role
   await ctx.reply(
-    `🎯 *Relevant Experience for ${roleName}*\n\n` +
+    `🎯 *Relevant Experience for ${safeRoleName}*\n\n` +
       `Enter your relevant experience for this specific role:\n` +
       `_e.g. 4 Years in Node.js / TypeScript, or 3 Years in AWS / Terraform_\n\n` +
       `Send /skip to leave blank or /cancel to abort:`,
@@ -55,12 +58,13 @@ export async function addRoleFlow(
 
   // Step 3: Expected CTC for this role
   await ctx.reply(
-    `💰 *Expected CTC for ${roleName}*\n\n` +
+    `💰 *Expected CTC for ${safeRoleName}*\n\n` +
       `Enter your expected CTC for this position:\n` +
       `_e.g. 20 LPA, 25 LPA_\n\n` +
       `Send /skip to leave blank or /cancel to abort:`,
     { parse_mode: "Markdown" }
   );
+
   const expCtcCtx = await conversation.waitFor("message:text");
   const expCtcText = expCtcCtx.message.text.trim();
   if (expCtcText === "/cancel") { await ctx.reply("❌ Cancelled role creation."); return; }
@@ -97,12 +101,16 @@ export async function addRoleFlow(
       attachResumeToRole(telegramId, newRole.id, resume)
     );
 
+    const safeExp = escapeMarkdown(relevantExperience || "—");
+    const safeCtc = escapeMarkdown(expectedCtc || "—");
+    const safeOffer = escapeMarkdown(holdingOffer || "—");
+
     await ctx.reply(
       `✅ *Role Created & Resume Attached!*\n\n` +
-        `👔 *Role:* ${newRole.name}\n` +
-        `🎯 *Relevant Exp:* ${relevantExperience || "—"}\n` +
-        `💰 *Expected CTC:* ${expectedCtc || "—"}\n` +
-        `📄 *Holding Offer:* ${holdingOffer || "—"}\n` +
+        `👔 *Role:* ${safeRoleName}\n` +
+        `🎯 *Relevant Exp:* ${safeExp}\n` +
+        `💰 *Expected CTC:* ${safeCtc}\n` +
+        `📄 *Holding Offer:* ${safeOffer}\n` +
         `📎 *Attached Resume:* \`${resume.fileName}\`\n\n` +
         `You can now use /mail to apply for jobs targeting this role!`,
       { parse_mode: "Markdown" }
@@ -110,14 +118,19 @@ export async function addRoleFlow(
     return;
   }
 
+  const safeExp = escapeMarkdown(relevantExperience || "—");
+  const safeCtc = escapeMarkdown(expectedCtc || "—");
+  const safeOffer = escapeMarkdown(holdingOffer || "—");
+
   await ctx.reply(
     `✅ *Role Created!*\n\n` +
-      `👔 *Role:* ${newRole.name}\n` +
-      `🎯 *Relevant Exp:* ${relevantExperience || "—"}\n` +
-      `💰 *Expected CTC:* ${expectedCtc || "—"}\n` +
-      `📄 *Holding Offer:* ${holdingOffer || "—"}\n` +
+      `👔 *Role:* ${safeRoleName}\n` +
+      `🎯 *Relevant Exp:* ${safeExp}\n` +
+      `💰 *Expected CTC:* ${safeCtc}\n` +
+      `📄 *Holding Offer:* ${safeOffer}\n` +
       `📄 *Resume:* Not attached yet\n\n` +
       `Send a PDF resume file to attach a tailored resume to this role, or run /roles to manage all roles.`,
     { parse_mode: "Markdown" }
   );
+
 }

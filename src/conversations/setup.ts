@@ -1,6 +1,7 @@
 import type { BotContext, MyConversation } from "../types.js";
 import { encrypt } from "../services/crypto.js";
 import { updateSmtp } from "../services/user.js";
+import { escapeMarkdown } from "../services/format.js";
 import nodemailer from "nodemailer";
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -134,9 +135,10 @@ export async function setupFlow(
       });
     });
 
+    const safeSenderName = escapeMarkdown(senderName);
     await ctx.reply(
       `✅ *SMTP configured successfully!*\n\n` +
-        `📤 From: *${senderName}* \`<${emailAddress}>\`\n` +
+        `📤 From: *${safeSenderName}* \`<${emailAddress}>\`\n` +
         `🌐 Host: \`${host}:${port}\`\n\n` +
         `You're ready to send applications. Use /mail or /apply to get started!`,
       { parse_mode: "Markdown" }

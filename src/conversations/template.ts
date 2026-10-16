@@ -1,5 +1,6 @@
 import type { BotContext, MyConversation } from "../types.js";
 import { getUser, updateTemplate } from "../services/user.js";
+import { escapeMarkdown } from "../services/format.js";
 
 /**
  * Conversation: Template / Tone Manager
@@ -23,7 +24,7 @@ export async function templateFlow(
   if (user?.templates.default) {
     await ctx.reply(
       "📝 *Your current template:*\n\n" +
-        `_${user.templates.default}_\n\n` +
+        `_${escapeMarkdown(user.templates.default)}_\n\n` +
         "Send a new template below to replace it, or /cancel to keep the current one.",
       { parse_mode: "Markdown" }
     );
@@ -56,10 +57,14 @@ export async function templateFlow(
 
   await conversation.external(() => updateTemplate(telegramId, input));
 
+  const safePreview = escapeMarkdown(
+    `${input.slice(0, 200)}${input.length > 200 ? "…" : ""}`
+  );
+
   await ctx.reply(
     "✅ *Template saved!*\n\n" +
       "Your tone notes will be used in all future /apply calls.\n\n" +
-      `_Preview:_\n${input.slice(0, 200)}${input.length > 200 ? "…" : ""}`,
+      `_Preview:_\n${safePreview}`,
     { parse_mode: "Markdown" }
   );
 }

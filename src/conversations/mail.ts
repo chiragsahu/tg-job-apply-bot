@@ -4,6 +4,7 @@ import { getUser, getRoles, getCandidateProfile } from "../services/user.js";
 import { tailorApplication } from "../services/ai.js";
 import { sendApplicationEmail } from "../services/mailer.js";
 import type { UserResume, UserRole } from "../models/User.js";
+import { escapeMarkdown } from "../services/format.js";
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -115,9 +116,10 @@ export async function mailFlow(
 
   roleKeyboard.text("❌ Cancel", "mail_cancel");
 
+  const emailListDisplay = recipientEmails.map((e) => `\`${e}\``).join(", ");
   await ctx.reply(
     `🎯 *Select Role for Application*\n\n` +
-      `Recipients: *${recipientEmails.length}* (${recipientEmails.join(", ")})\n\n` +
+      `Recipients: *${recipientEmails.length}* (${emailListDisplay})\n\n` +
       `Which role would you like to apply for? The corresponding resume will be attached:`,
     { parse_mode: "Markdown", reply_markup: roleKeyboard },
   );
@@ -156,8 +158,9 @@ export async function mailFlow(
   }
 
   // ── Step 4: Job Description ───────────────────────────────────────────────
+  const safeRoleName = escapeMarkdown(selectedRoleName);
   await ctx.reply(
-    `📋 *Job Description for ${selectedRoleName}*\n\n` +
+    `📋 *Job Description for ${safeRoleName}*\n\n` +
       "Paste the job posting, description, or requirements below.\n\n" +
       "_Tip: Send /skip to generate a tailored pitch using your role and profile data, or /cancel to abort._",
     { parse_mode: "Markdown" },
@@ -175,7 +178,7 @@ export async function mailFlow(
 
   // ── Step 5: AI Generation ─────────────────────────────────────────────────
   const thinkingMsg = await ctx.reply(
-    `🤖 *Tailoring Application for ${selectedRoleName}...*\n\n` +
+    `🤖 *Tailoring Application for ${safeRoleName}...*\n\n` +
       "Synthesizing your resume, candidate profile, and requirements...",
     { parse_mode: "Markdown" },
   );
@@ -208,27 +211,34 @@ export async function mailFlow(
     .catch(() => {});
 
   // ── Step 6: Application Preview ───────────────────────────────────────────
-  const strippedBody = application.body
-    .replace(/<br\s*\/?>/gi, "\n")
-    .replace(/<\/p>/gi, "\n\n")
-    .replace(/<\/li>/gi, "\n")
-    .replace(/<[^>]+>/g, "")
-    .trim()
-    .slice(0, 2000);
+  const strippedBody = escapeMarkdown(
+    application.body
+      .replace(/<br\s*\/?>/gi, "\n")
+      .replace(/<\/p>/gi, "\n\n")
+      .replace(/<\/li>/gi, "\n")
+      .replace(/<[^>]+>/g, "")
+      .trim()
+      .slice(0, 2000),
+  );
 
   let roleDetailsText = "";
   if (selectedRole?.relevantExperience || selectedRole?.expectedCtc) {
-    roleDetailsText = `🎯 *Role Screening:* Exp: ${selectedRole.relevantExperience || "—"} | Exp CTC: ${selectedRole.expectedCtc || "—"}\n`;
+    const expText = escapeMarkdown(selectedRole.relevantExperience || "—");
+    const ctcText = escapeMarkdown(selectedRole.expectedCtc || "—");
+    roleDetailsText = `🎯 *Role Screening:* Exp: ${expText} | Exp CTC: ${ctcText}\n`;
   }
+
+  const fromName = escapeMarkdown(user.smtp.senderName ?? user.smtp.user);
+  const safeSubject = escapeMarkdown(application.subject);
 
   const preview =
     `📬 *Bulk Application Preview*\n\n` +
-    `📤 *From:* ${user.smtp.senderName ?? user.smtp.user} \`<${user.smtp.user}>\`\n` +
+    `📤 *From:* ${fromName} \`<${user.smtp.user}>\`\n` +
     `📧 *To (${recipientEmails.length}):* \`${recipientEmails.join(", ")}\`\n` +
-    `👔 *Role:* ${selectedRoleName}\n` +
+    `👔 *Role:* ${safeRoleName}\n` +
     roleDetailsText +
-    `📎 *Attachment:* ${selectedResume.fileName}\n` +
-    `📌 *Subject:* ${application.subject}\n` +
+    `📎 *Attachment:* \`${selectedResume.fileName}\`\n` +
+    `📌 *Subject:* ${safeSubject}\n` +
     `━━━━━━━━━━━━━━━━━━━━━━\n` +
     strippedBody +
     `\n━━━━━━━━━━━━━━━━━━━━━━`;
@@ -289,8 +299,8 @@ export async function mailFlow(
     .catch(() => {});
 
   let summary = `📊 *Application Dispatch Summary*\n\n`;
-  summary += `👔 *Role Applied:* ${selectedRoleName}\n`;
-  summary += `📎 *Attached Resume:* ${selectedResume.fileName}\n`;
+  summary += `👔 *Role Applied:* ${safeRoleName}\n`;
+  summary += `📎 *Attached Resume:* \`${selectedResume.fileName}\`\n`;
   summary += `✅ *Sent:* ${successes.length}/${recipientEmails.length}\n`;
 
   if (successes.length > 0) {
@@ -301,7 +311,7 @@ export async function mailFlow(
   if (failures.length > 0) {
     summary +=
       `\n\n*Failed:*\n` +
-      failures.map((f) => `• \`${f.email}\`: ${f.error}`).join("\n");
+      failures.map((f) => `• \`${f.email}\`: \`${f.error}\``).join("\n");
   }
 
   await ctx.reply(summary, { parse_mode: "Markdown" });

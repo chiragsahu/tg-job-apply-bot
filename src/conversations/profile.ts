@@ -1,6 +1,7 @@
 import type { BotContext, MyConversation } from "../types.js";
 import { getCandidateProfile, updateCandidateProfile } from "../services/user.js";
 import type { CandidateProfile } from "../models/User.js";
+import { escapeMarkdown } from "../services/format.js";
 
 /**
  * Conversation: Candidate Profile Setup & Update Flow
@@ -33,7 +34,7 @@ export async function profileFlow(
     fieldKey: keyof CandidateProfile,
     example: string
   ): Promise<string | undefined> => {
-    const existingVal = current[fieldKey] ? ` (Current: _${current[fieldKey]}_)` : "";
+    const existingVal = current[fieldKey] ? ` (Current: \`${current[fieldKey]}\`)` : "";
     await ctx.reply(
       `👉 *${fieldTitle}*${existingVal}\n_e.g. ${example}_\nSend your value or /skip:`,
       { parse_mode: "Markdown" }
@@ -133,17 +134,17 @@ export async function profileFlow(
 
     await ctx.reply(
       "✅ *Candidate Profile saved successfully!*\n\n" +
-        `👤 *Official Name:* ${officialName || "—"}\n` +
-        `📱 *Mobile:* ${mobile || "—"}\n` +
-        `📧 *Email:* ${emailId || "—"}\n` +
-        `🎂 *DOB:* ${dob || "—"}\n` +
-        `💼 *Total Exp:* ${totalExperience || "—"}\n` +
-        `🏢 *Current Co:* ${currentCompany || "—"}\n` +
-        `📍 *Location:* ${currentLocation || "—"} → ${preferredLocation || "—"}\n` +
-        `💰 *Current CTC:* ${currentCtc || "—"}\n` +
-        `⏳ *Notice Period:* ${noticePeriod || "—"}\n\n` +
+        `👤 *Official Name:* ${escapeMarkdown(officialName || "—")}\n` +
+        `📱 *Mobile:* ${escapeMarkdown(mobile || "—")}\n` +
+        `📧 *Email:* ${escapeMarkdown(emailId || "—")}\n` +
+        `🎂 *DOB:* ${escapeMarkdown(dob || "—")}\n` +
+        `💼 *Total Exp:* ${escapeMarkdown(totalExperience || "—")}\n` +
+        `🏢 *Current Co:* ${escapeMarkdown(currentCompany || "—")}\n` +
+        `📍 *Location:* ${escapeMarkdown(currentLocation || "—")} → ${escapeMarkdown(preferredLocation || "—")}\n` +
+        `💰 *Current CTC:* ${escapeMarkdown(currentCtc || "—")}\n` +
+        `⏳ *Notice Period:* ${escapeMarkdown(noticePeriod || "—")}\n\n` +
         "_💡 Note: Role-specific details (Relevant Experience, Expected CTC, Holding Offer) are configured per role under /roles._\n\n" +
-        "You can view your profile with /candidate_profile or edit with /edit_profile.",
+        "You can view your profile with /candidate\\_profile or edit with /edit\\_profile.",
       { parse_mode: "Markdown" }
     );
   } catch (err) {

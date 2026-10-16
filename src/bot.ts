@@ -28,6 +28,7 @@ import {
   extractResumeText,
   validateResumeDocument,
 } from "./services/pdf.js";
+import { escapeMarkdown } from "./services/format.js";
 
 import { setupFlow } from "./conversations/setup.js";
 import { templateFlow } from "./conversations/template.js";
@@ -105,18 +106,18 @@ async function main(): Promise<void> {
       `📖 *Commands*\n\n` +
         `*📧 Email Setup*\n` +
         `/setup — Configure your SMTP email account\n` +
-        `/delete_smtp — Remove your saved email config\n\n` +
+        `/delete\\_smtp — Remove your saved email config\n\n` +
         `*🎯 Job Roles & Resumes (1:1)*\n` +
         `/roles — View and manage your job roles\n` +
-        `/add_role — Create a new job role (e.g. /add_role Backend Engineer)\n` +
+        `/add\\_role — Create a new job role (e.g. /add\\_role Backend Engineer)\n` +
         `_(Upload a PDF at any time to attach to a role)_\n\n` +
         `*👤 Candidate Profile*\n` +
-        `/candidate_profile — View screening details (DOB, CTC, Notice Period, etc.)\n` +
-        `/edit_profile — Setup or update your screening profile\n\n` +
+        `/candidate\\_profile — View screening details (DOB, CTC, Notice Period, etc.)\n` +
+        `/edit\\_profile — Setup or update your screening profile\n\n` +
         `*📝 Templates*\n` +
-        `/set_template — Create or update cover letter tone\n` +
-        `/view_template — View your full saved template\n` +
-        `/delete_template — Remove your saved template\n\n` +
+        `/set\\_template — Create or update cover letter tone\n` +
+        `/view\\_template — View your full saved template\n` +
+        `/delete\\_template — Remove your saved template\n\n` +
         `*🚀 Apply & Bulk Mail*\n` +
         `/mail — Apply to 1 or more HRs with role selection (/mail hr@co.com, recruiter@co.com)\n` +
         `/apply — Quick single application using default resume\n\n` +
@@ -141,10 +142,11 @@ async function main(): Promise<void> {
 
     // SMTP
     if (user.smtp) {
+      const fromName = escapeMarkdown(user.smtp.senderName ?? "—");
       lines.push(
         `📤 *Email:* \`${user.smtp.user}\`\n` +
           `🌐 *SMTP:* \`${user.smtp.host}:${user.smtp.port}\`\n` +
-          `👤 *From name:* ${user.smtp.senderName ?? "—"}`
+          `👤 *From name:* ${fromName}`
       );
     } else {
       lines.push("📤 *Email:* ❌ Not configured — /setup");
@@ -158,26 +160,29 @@ async function main(): Promise<void> {
       const rolesSummary = roles
         .map(
           (r) =>
-            `• *${r.name}:* ${r.resume ? `\`${r.resume.fileName}\`` : "⚠️ No resume"}`
+            `• *${escapeMarkdown(r.name)}:* ${r.resume ? `\`${r.resume.fileName}\`` : "⚠️ No resume"}`
         )
         .join("\n");
       lines.push(`🎯 *Roles (${roles.length}):*\n${rolesSummary}\n_/roles to manage_`);
     } else {
-      lines.push("🎯 *Roles:* ❌ None created — /add_role or /roles");
+      lines.push("🎯 *Roles:* ❌ None created — /add\\_role or /roles");
     }
 
     lines.push("");
 
     // Candidate Profile
     if (user.profile?.officialName || user.profile?.totalExperience) {
+      const name = escapeMarkdown(user.profile.officialName || "—");
+      const exp = escapeMarkdown(user.profile.totalExperience || "—");
+      const notice = escapeMarkdown(user.profile.noticePeriod || "—");
       lines.push(
         `👤 *Screening Profile:* ✅ Configured\n` +
-          `• Name: ${user.profile.officialName || "—"}\n` +
-          `• Exp: ${user.profile.totalExperience || "—"} | Notice: ${user.profile.noticePeriod || "—"}\n` +
-          `_/candidate_profile for full details_`
+          `• Name: ${name}\n` +
+          `• Exp: ${exp} | Notice: ${notice}\n` +
+          `_/candidate\\_profile for full details_`
       );
     } else {
-      lines.push("👤 *Screening Profile:* ❌ Not setup — /edit_profile");
+      lines.push("👤 *Screening Profile:* ❌ Not setup — /edit\\_profile");
     }
 
     lines.push("");
@@ -196,17 +201,18 @@ async function main(): Promise<void> {
 
     // Template
     if (user.templates.default) {
-      const preview = user.templates.default.slice(0, 100);
+      const preview = escapeMarkdown(user.templates.default.slice(0, 100));
       lines.push(
         `📝 *Template:* ✅\n_${preview}${user.templates.default.length > 100 ? "…" : ""}_\n` +
-          `_/view_template · /set_template_`
+          `_/view\\_template · /set\\_template_`
       );
     } else {
-      lines.push("📝 *Template:* ❌ Not set — /set_template");
+      lines.push("📝 *Template:* ❌ Not set — /set\\_template");
     }
 
     await ctx.reply(lines.join("\n"), { parse_mode: "Markdown" });
   });
+
 
   // ── Candidate Profile Commands ─────────────────────────────────────────────
 
@@ -229,16 +235,16 @@ async function main(): Promise<void> {
 
     const lines: string[] = [
       "👤 *Candidate Global Screening Profile*\n",
-      `*Official Name:* ${profile.officialName || "—"}`,
-      `*Mobile:* ${profile.mobile || "—"}`,
-      `*Email:* ${profile.emailId || "—"}`,
-      `*DOB:* ${profile.dob || "—"}`,
-      `*Total Experience:* ${profile.totalExperience || "—"}`,
-      `*Current Company:* ${profile.currentCompany || "—"}`,
-      `*Current Location:* ${profile.currentLocation || "—"}`,
-      `*Preferred Location:* ${profile.preferredLocation || "—"}`,
-      `*Current CTC:* ${profile.currentCtc || "—"}`,
-      `*Notice Period / LWD:* ${profile.noticePeriod || "—"}\n`,
+      `*Official Name:* ${escapeMarkdown(profile.officialName || "—")}`,
+      `*Mobile:* ${escapeMarkdown(profile.mobile || "—")}`,
+      `*Email:* ${escapeMarkdown(profile.emailId || "—")}`,
+      `*DOB:* ${escapeMarkdown(profile.dob || "—")}`,
+      `*Total Experience:* ${escapeMarkdown(profile.totalExperience || "—")}`,
+      `*Current Company:* ${escapeMarkdown(profile.currentCompany || "—")}`,
+      `*Current Location:* ${escapeMarkdown(profile.currentLocation || "—")}`,
+      `*Preferred Location:* ${escapeMarkdown(profile.preferredLocation || "—")}`,
+      `*Current CTC:* ${escapeMarkdown(profile.currentCtc || "—")}`,
+      `*Notice Period / LWD:* ${escapeMarkdown(profile.noticePeriod || "—")}\n`,
       `_💡 Note: Role-specific details (Relevant Experience, Expected CTC, Holding Offer) are configured per role under /roles._`,
     ];
 
@@ -265,7 +271,7 @@ async function main(): Promise<void> {
         "👔 *Job Roles*\n\n" +
           "You haven't created any roles yet.\n\n" +
           "Roles allow you to attach different tailored resumes (1-to-1) and set role-specific screening metrics (Relevant Experience, Expected CTC, Holding Offer).\n\n" +
-          "Click below or run /add_role to create your first role!",
+          "Click below or run /add\\_role to create your first role!",
         { parse_mode: "Markdown", reply_markup: keyboard }
       );
       return;
@@ -278,13 +284,14 @@ async function main(): Promise<void> {
         : `⚠️ Resume: _Not attached yet (upload a PDF to attach)_`;
 
       const details: string[] = [];
-      if (r.relevantExperience) details.push(`Exp: ${r.relevantExperience}`);
-      if (r.expectedCtc) details.push(`Expected CTC: ${r.expectedCtc}`);
-      if (r.holdingOffer) details.push(`Offer: ${r.holdingOffer}`);
+      if (r.relevantExperience) details.push(`Exp: ${escapeMarkdown(r.relevantExperience)}`);
+      if (r.expectedCtc) details.push(`Expected CTC: ${escapeMarkdown(r.expectedCtc)}`);
+      if (r.holdingOffer) details.push(`Offer: ${escapeMarkdown(r.holdingOffer)}`);
       const detailsLine = details.length > 0 ? `   🎯 _${details.join(" | ")}_\n` : "";
+      const safeRoleName = escapeMarkdown(r.name);
 
-      msg += `${idx + 1}. *${r.name}*\n   ${resumeInfo}\n${detailsLine}\n`;
-      keyboard.text(`🗑 Delete "${r.name.slice(0, 18)}"`, `delete_role:${r.id}`).row();
+      msg += `${idx + 1}. *${safeRoleName}*\n   ${resumeInfo}\n${detailsLine}\n`;
+      keyboard.text(`🗑 Delete "${safeRoleName.slice(0, 18)}"`, `delete_role:${r.id}`).row();
     });
 
     keyboard.text("➕ Add New Role", "add_new_role").row();
@@ -294,12 +301,13 @@ async function main(): Promise<void> {
   });
 
 
+
   bot.command("add_role", async (ctx) => {
     const name = ctx.message?.text?.replace(/^\/add_role(@\w+)?/i, "").trim();
     if (name && name.length >= 2) {
       const role = await addRole(ctx.from!.id, name);
       await ctx.reply(
-        `✅ *Role Created!*\n\n👔 *Role:* ${role.name}\n\nSend a PDF resume file to attach to this role!`,
+        `✅ *Role Created!*\n\n👔 *Role:* ${escapeMarkdown(role.name)}\n\nSend a PDF resume file to attach to this role!`,
         { parse_mode: "Markdown" }
       );
     } else {
@@ -410,7 +418,7 @@ async function main(): Promise<void> {
 
     // Telegram messages max 4096 chars — safe to send full template
     await ctx.reply(
-      `📝 *Your Cover Letter Template*\n\n${user.templates.default}`,
+      `📝 *Your Cover Letter Template*\n\n${escapeMarkdown(user.templates.default)}`,
       { parse_mode: "Markdown", reply_markup: keyboard }
     );
   });
@@ -480,7 +488,7 @@ async function main(): Promise<void> {
     await ctx.answerCallbackQuery();
     await deleteTemplate(ctx.from.id);
     await ctx.editMessageText(
-      "🗑 *Template deleted.*\n\nRun /set_template to create a new one.",
+      "🗑 *Template deleted.*\n\nRun /set\\_template to create a new one.",
       { parse_mode: "Markdown" }
     );
   });
@@ -528,7 +536,7 @@ async function main(): Promise<void> {
 
     await deleteRole(ctx.from.id, roleId);
     await ctx.editMessageText(
-      `🗑 *Role "${role.name}" deleted.*\n\nUse /roles to view your remaining roles.`,
+      `🗑 *Role "${escapeMarkdown(role.name)}" deleted.*\n\nUse /roles to view your remaining roles.`,
       { parse_mode: "Markdown" }
     );
   });
@@ -553,10 +561,11 @@ async function main(): Promise<void> {
     await attachResumeToRole(ctx.from.id, roleId, pending);
     ctx.session.pendingResume = undefined;
 
+    const safeRoleName = escapeMarkdown(role.name);
     await ctx.editMessageText(
-      `✅ *Resume attached to role: "${role.name}"!*\n\n` +
+      `✅ *Resume attached to role: "${safeRoleName}"!*\n\n` +
         `📄 File: \`${pending.fileName}\`\n\n` +
-        `When you run /mail, you can select *${role.name}* to apply with this resume.`,
+        `When you run /mail, you can select *${safeRoleName}* to apply with this resume.`,
       { parse_mode: "Markdown" }
     );
   });

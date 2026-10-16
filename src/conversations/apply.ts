@@ -12,6 +12,7 @@ import {
 } from "../services/pdf.js";
 import { tailorApplication } from "../services/ai.js";
 import { sendApplicationEmail } from "../services/mailer.js";
+import { escapeMarkdown } from "../services/format.js";
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -81,7 +82,7 @@ export async function applyFlow(
         }),
       );
 
-      await ctx.reply(`✅ Resume saved: *${doc.file_name ?? "Resume.pdf"}*`, {
+      await ctx.reply(`✅ Resume saved: \`${doc.file_name ?? "Resume.pdf"}\``, {
         parse_mode: "Markdown",
       });
 
@@ -170,22 +171,27 @@ export async function applyFlow(
     .catch(() => {});
 
   // ── Step 5: Preview ─────────────────────────────────────────────────────
-  const preview =
-    `📬 *Application Preview*\n\n` +
-    `📤 *From:* ${user.smtp.senderName ?? user.smtp.user} \`<${user.smtp.user}>\`\n` +
-    `📧 *To:* \`${recipientEmail}\`\n` +
-    `📌 *Subject:* ${application.subject}\n` +
-    `━━━━━━━━━━━━━━━━━━━━━━\n` +
-    // Strip HTML for Telegram preview
+  const fromName = escapeMarkdown(user.smtp.senderName ?? user.smtp.user);
+  const safeSubject = escapeMarkdown(application.subject);
+  const strippedBody = escapeMarkdown(
     application.body
       .replace(/<br\s*\/?>/gi, "\n")
       .replace(/<\/p>/gi, "\n\n")
       .replace(/<\/li>/gi, "\n")
       .replace(/<[^>]+>/g, "")
       .trim()
-      .slice(0, 2000) +
+      .slice(0, 2000),
+  );
+
+  const preview =
+    `📬 *Application Preview*\n\n` +
+    `📤 *From:* ${fromName} \`<${user.smtp.user}>\`\n` +
+    `📧 *To:* \`${recipientEmail}\`\n` +
+    `📌 *Subject:* ${safeSubject}\n` +
+    `━━━━━━━━━━━━━━━━━━━━━━\n` +
+    strippedBody +
     `\n━━━━━━━━━━━━━━━━━━━━━━\n` +
-    `📎 *Attachment:* ${resume.fileName}`;
+    `📎 *Attachment:* \`${resume.fileName}\``;
 
   const keyboard = new InlineKeyboard()
     .text("🚀 Send Application", "confirm_send")
@@ -240,9 +246,9 @@ export async function applyFlow(
         `✅ *Application sent successfully!*\n\n` +
           `📧 To: \`${recipientEmail}\`\n` +
           `📤 From: \`${user.smtp!.user}\`\n` +
-          `📌 Subject: ${application.subject}\n` +
-          `📎 Attached: ${resume.fileName}\n\n` +
-          `_Message ID: ${result.messageId}_`,
+          `📌 Subject: ${safeSubject}\n` +
+          `📎 Attached: \`${resume.fileName}\`\n\n` +
+          `_Message ID: \`${result.messageId}\`_`,
         { parse_mode: "Markdown" },
       );
     } catch (err) {
