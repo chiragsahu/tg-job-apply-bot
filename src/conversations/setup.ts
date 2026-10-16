@@ -94,8 +94,11 @@ export async function setupFlow(
   const rawPassword = passCtx.message.text.trim();
   if (rawPassword === "/cancel") { await ctx.reply("❌ Setup cancelled."); return; }
 
+  // Clean password: strip all spaces (Google App Passwords are 16 letters often pasted with spaces like "abcd efgh ijkl mnop")
+  const cleanPassword = rawPassword.replace(/\s+/g, "");
+
   // Encrypt immediately — never kept in plaintext after this point
-  const encryptedPass = encrypt(rawPassword);
+  const encryptedPass = await conversation.external(() => encrypt(cleanPassword));
 
   // Step 5: Display name
   await ctx.reply(
@@ -112,30 +115,39 @@ export async function setupFlow(
   await ctx.reply("🔌 Testing your SMTP connection...");
 
   try {
-    const transporter = nodemailer.createTransport({
-      host,
-      port,
-      secure: port === 465,
-      auth: { user: emailAddress, pass: rawPassword },
-    });
-    await transporter.verify();
+    await conversation.external(async () => {
+      const transporter = nodemailer.createTransport({
+        host,
+        port,
+        secure: port === 465,
+        auth: { user: emailAddress, pass: cleanPassword },
+      });
+      await transporter.verify();
 
-    // Save to MongoDB
-    await updateSmtp(telegramId, { host, port, user: emailAddress, encryptedPass, senderName });
+      // Save to MongoDB
+      await updateSmtp(telegramId, {
+        host,
+        port,
+        user: emailAddress,
+        encryptedPass,
+        senderName,
+      });
+    });
 
     await ctx.reply(
       `✅ *SMTP configured successfully!*\n\n` +
         `📤 From: *${senderName}* \`<${emailAddress}>\`\n` +
         `🌐 Host: \`${host}:${port}\`\n\n` +
-        `You're ready to send applications. Use /apply to get started!`,
+        `You're ready to send applications. Use /mail or /apply to get started!`,
       { parse_mode: "Markdown" }
     );
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
     await ctx.reply(
       `❌ *SMTP connection failed*\n\n\`${message}\`\n\n` +
-        "Please check your credentials and try /setup again.",
+        "Please check your email and App Password, then run /setup again.",
       { parse_mode: "Markdown" }
     );
   }
 }
+

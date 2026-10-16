@@ -1,20 +1,27 @@
-import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
+import {
+  createCipheriv,
+  createDecipheriv,
+  createHash,
+  randomBytes,
+} from "node:crypto";
 
 const ALGORITHM = "aes-256-gcm";
 const IV_LENGTH = 16;
 const AUTH_TAG_LENGTH = 16;
 
 function getKey(): Buffer {
-  const hex = process.env["ENCRYPTION_KEY"];
-  if (!hex) throw new Error("ENCRYPTION_KEY environment variable is not set.");
-  const key = Buffer.from(hex, "hex");
-  if (key.length !== 32) {
-    throw new Error(
-      "ENCRYPTION_KEY must be a 32-byte (64 hex character) string. Generate with: openssl rand -hex 32"
-    );
+  const secret = process.env["ENCRYPTION_KEY"];
+  if (!secret) throw new Error("ENCRYPTION_KEY environment variable is not set.");
+
+  // If it's a 64-character hex string, parse it directly as 32 bytes
+  if (secret.length === 64 && /^[0-9a-fA-F]{64}$/.test(secret)) {
+    return Buffer.from(secret, "hex");
   }
-  return key;
+
+  // Otherwise, deterministically derive a 32-byte AES key using SHA-256
+  return createHash("sha256").update(secret).digest();
 }
+
 
 /**
  * Encrypts a plaintext string using AES-256-GCM.
