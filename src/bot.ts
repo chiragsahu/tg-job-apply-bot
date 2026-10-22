@@ -100,6 +100,11 @@ async function main(): Promise<void> {
     );
   });
 
+  // ── /ping ──────────────────────────────────────────────────────────────────
+  bot.command("ping", async (ctx) => {
+    await ctx.reply("🏓 Pong! Bot is alive.");
+  });
+
   // ── /help ──────────────────────────────────────────────────────────────────
   bot.command("help", async (ctx) => {
     await ctx.reply(
