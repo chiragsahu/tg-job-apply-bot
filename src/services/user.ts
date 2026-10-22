@@ -20,7 +20,7 @@ function collection(): Promise<Collection<UserDoc>> {
 export async function getOrCreateUser(
   telegramId: number,
   username?: string,
-  firstName?: string
+  firstName?: string,
 ): Promise<UserDoc> {
   const col = await collection();
   const now = new Date();
@@ -29,9 +29,13 @@ export async function getOrCreateUser(
     { telegramId },
     {
       $setOnInsert: { telegramId, templates: {}, createdAt: now },
-      $set: { updatedAt: now, ...(username && { username }), ...(firstName && { firstName }) },
+      $set: {
+        updatedAt: now,
+        ...(username && { username }),
+        ...(firstName && { firstName }),
+      },
     },
-    { upsert: true }
+    { upsert: true },
   );
 
   return col.findOne({ telegramId }) as Promise<UserDoc>;
@@ -50,12 +54,12 @@ export async function getUser(telegramId: number): Promise<UserDoc | null> {
  */
 export async function updateResume(
   telegramId: number,
-  resume: UserResume
+  resume: UserResume,
 ): Promise<void> {
   const col = await collection();
   await col.updateOne(
     { telegramId },
-    { $set: { resume, updatedAt: new Date() } }
+    { $set: { resume, updatedAt: new Date() } },
   );
 }
 
@@ -64,12 +68,12 @@ export async function updateResume(
  */
 export async function updateSmtp(
   telegramId: number,
-  smtp: UserSmtp
+  smtp: UserSmtp,
 ): Promise<void> {
   const col = await collection();
   await col.updateOne(
     { telegramId },
-    { $set: { smtp, updatedAt: new Date() } }
+    { $set: { smtp, updatedAt: new Date() } },
   );
 }
 
@@ -78,12 +82,12 @@ export async function updateSmtp(
  */
 export async function updateTemplate(
   telegramId: number,
-  template: string
+  template: string,
 ): Promise<void> {
   const col = await collection();
   await col.updateOne(
     { telegramId },
-    { $set: { "templates.default": template, updatedAt: new Date() } }
+    { $set: { "templates.default": template, updatedAt: new Date() } },
   );
 }
 
@@ -94,7 +98,7 @@ export async function hasSmtp(telegramId: number): Promise<boolean> {
   const col = await collection();
   const user = await col.findOne(
     { telegramId, smtp: { $exists: true } },
-    { projection: { _id: 1 } }
+    { projection: { _id: 1 } },
   );
   return user !== null;
 }
@@ -106,7 +110,7 @@ export async function deleteResume(telegramId: number): Promise<void> {
   const col = await collection();
   await col.updateOne(
     { telegramId },
-    { $unset: { resume: "" }, $set: { updatedAt: new Date() } }
+    { $unset: { resume: "" }, $set: { updatedAt: new Date() } },
   );
 }
 
@@ -118,7 +122,7 @@ export async function deleteSmtp(telegramId: number): Promise<void> {
   const col = await collection();
   await col.updateOne(
     { telegramId },
-    { $unset: { smtp: "" }, $set: { updatedAt: new Date() } }
+    { $unset: { smtp: "" }, $set: { updatedAt: new Date() } },
   );
 }
 
@@ -129,7 +133,7 @@ export async function deleteTemplate(telegramId: number): Promise<void> {
   const col = await collection();
   await col.updateOne(
     { telegramId },
-    { $unset: { "templates.default": "" }, $set: { updatedAt: new Date() } }
+    { $unset: { "templates.default": "" }, $set: { updatedAt: new Date() } },
   );
 }
 
@@ -148,11 +152,48 @@ export async function deleteUser(telegramId: number): Promise<void> {
  * Gets the candidate profile details for a user.
  */
 export async function getCandidateProfile(
-  telegramId: number
+  telegramId: number,
 ): Promise<CandidateProfile | undefined> {
   const col = await collection();
-  const user = await col.findOne({ telegramId }, { projection: { profile: 1 } });
+  const user = await col.findOne(
+    { telegramId },
+    { projection: { profile: 1 } },
+  );
   return user?.profile;
+}
+
+// New: Retrieve SMTP configuration for a user
+export async function getSmtp(
+  telegramId: number,
+): Promise<UserSmtp | undefined> {
+  const col = await collection();
+  const user = await col.findOne({ telegramId }, { projection: { smtp: 1 } });
+  return user?.smtp;
+}
+
+// New: Update a single field of the SMTP config, preserving other fields
+export async function updateSmtpField(
+  telegramId: number,
+  field: keyof UserSmtp,
+  value: any,
+): Promise<void> {
+  const existing = await getSmtp(telegramId);
+  const updated = { ...(existing || {}), [field]: value } as UserSmtp;
+  await updateSmtp(telegramId, updated);
+}
+
+// New: Update a single field of the candidate profile, preserving other fields
+export async function updateCandidateProfileField(
+  telegramId: number,
+  field: keyof CandidateProfile,
+  value: any,
+): Promise<void> {
+  const existing = await getCandidateProfile(telegramId);
+  const updates: Partial<CandidateProfile> = {
+    ...(existing || {}),
+    [field]: value,
+  };
+  await updateCandidateProfile(telegramId, updates);
 }
 
 /**
@@ -160,7 +201,7 @@ export async function getCandidateProfile(
  */
 export async function updateCandidateProfile(
   telegramId: number,
-  profileUpdates: Partial<CandidateProfile>
+  profileUpdates: Partial<CandidateProfile>,
 ): Promise<void> {
   const col = await collection();
   const setObj: Record<string, unknown> = {
@@ -193,12 +234,12 @@ export async function getRoles(telegramId: number): Promise<UserRole[]> {
  */
 export async function getRole(
   telegramId: number,
-  roleId: string
+  roleId: string,
 ): Promise<UserRole | null> {
   const col = await collection();
   const user = await col.findOne(
     { telegramId, "roles.id": roleId },
-    { projection: { "roles.$": 1 } }
+    { projection: { "roles.$": 1 } },
   );
   return user?.roles?.[0] ?? null;
 }
@@ -213,16 +254,22 @@ export async function addRole(
     relevantExperience?: string | undefined;
     expectedCtc?: string | undefined;
     holdingOffer?: string | undefined;
-  }
+  },
 ): Promise<UserRole> {
   const col = await collection();
   const now = new Date();
   const newRole: UserRole = {
     id: randomUUID(),
     name: name.trim(),
-    ...(details?.relevantExperience !== undefined && { relevantExperience: details.relevantExperience }),
-    ...(details?.expectedCtc !== undefined && { expectedCtc: details.expectedCtc }),
-    ...(details?.holdingOffer !== undefined && { holdingOffer: details.holdingOffer }),
+    ...(details?.relevantExperience !== undefined && {
+      relevantExperience: details.relevantExperience,
+    }),
+    ...(details?.expectedCtc !== undefined && {
+      expectedCtc: details.expectedCtc,
+    }),
+    ...(details?.holdingOffer !== undefined && {
+      holdingOffer: details.holdingOffer,
+    }),
     createdAt: now,
     updatedAt: now,
   };
@@ -232,7 +279,7 @@ export async function addRole(
     {
       $push: { roles: newRole },
       $set: { updatedAt: now },
-    }
+    },
   );
 
   return newRole;
@@ -249,7 +296,7 @@ export async function updateRoleDetails(
     relevantExperience?: string | undefined;
     expectedCtc?: string | undefined;
     holdingOffer?: string | undefined;
-  }
+  },
 ): Promise<void> {
   const col = await collection();
   const now = new Date();
@@ -259,23 +306,22 @@ export async function updateRoleDetails(
   };
 
   if (updates.name !== undefined) setObj["roles.$.name"] = updates.name;
-  if (updates.relevantExperience !== undefined) setObj["roles.$.relevantExperience"] = updates.relevantExperience;
-  if (updates.expectedCtc !== undefined) setObj["roles.$.expectedCtc"] = updates.expectedCtc;
-  if (updates.holdingOffer !== undefined) setObj["roles.$.holdingOffer"] = updates.holdingOffer;
+  if (updates.relevantExperience !== undefined)
+    setObj["roles.$.relevantExperience"] = updates.relevantExperience;
+  if (updates.expectedCtc !== undefined)
+    setObj["roles.$.expectedCtc"] = updates.expectedCtc;
+  if (updates.holdingOffer !== undefined)
+    setObj["roles.$.holdingOffer"] = updates.holdingOffer;
 
-  await col.updateOne(
-    { telegramId, "roles.id": roleId },
-    { $set: setObj }
-  );
+  await col.updateOne({ telegramId, "roles.id": roleId }, { $set: setObj });
 }
-
 
 /**
  * Deletes a role by roleId.
  */
 export async function deleteRole(
   telegramId: number,
-  roleId: string
+  roleId: string,
 ): Promise<void> {
   const col = await collection();
   await col.updateOne(
@@ -283,7 +329,7 @@ export async function deleteRole(
     {
       $pull: { roles: { id: roleId } },
       $set: { updatedAt: new Date() },
-    }
+    },
   );
 }
 
@@ -293,7 +339,7 @@ export async function deleteRole(
 export async function attachResumeToRole(
   telegramId: number,
   roleId: string,
-  resume: UserResume
+  resume: UserResume,
 ): Promise<void> {
   const col = await collection();
   const now = new Date();
@@ -305,7 +351,7 @@ export async function attachResumeToRole(
         "roles.$.updatedAt": now,
         updatedAt: now,
       },
-    }
+    },
   );
 }
 
@@ -314,7 +360,7 @@ export async function attachResumeToRole(
  */
 export async function deleteRoleResume(
   telegramId: number,
-  roleId: string
+  roleId: string,
 ): Promise<void> {
   const col = await collection();
   const now = new Date();
@@ -326,8 +372,6 @@ export async function deleteRoleResume(
         "roles.$.updatedAt": now,
         updatedAt: now,
       },
-    }
+    },
   );
 }
-
-

@@ -1,10 +1,7 @@
 import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
-// pdf-parse is a CJS module; resolve callable function supporting default export interop
-const rawPdfParse = require("pdf-parse");
-const pdfParse = (
-  typeof rawPdfParse === "function" ? rawPdfParse : rawPdfParse?.default
-) as (buffer: Buffer) => Promise<{ text: string; numpages: number }>;
+// Import pdf-parse (CommonJS) directly as a function
+const pdfParse = require("pdf-parse");
 
 export const MAX_RESUME_SIZE_BYTES = 3 * 1024 * 1024; // 3 MB
 

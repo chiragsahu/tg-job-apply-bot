@@ -1,11 +1,16 @@
 import type { BotContext, MyConversation } from "../types.js";
 import { encrypt } from "../services/crypto.js";
-import { updateSmtp } from "../services/user.js";
+import type { UserSmtp } from "../models/User.js";
+import { getSmtp, updateSmtp, updateSmtpField } from "../services/user.js";
 import { escapeMarkdown } from "../services/format.js";
 import nodemailer from "nodemailer";
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const PORT_OPTIONS = ["587 (Recommended — Gmail/Outlook STARTTLS)", "465 (SSL)", "25 (Legacy)"];
+const PORT_OPTIONS = [
+  "587 (Recommended — Gmail/Outlook STARTTLS)",
+  "465 (SSL)",
+  "25 (Legacy)",
+];
 
 function extractPort(choice: string): number {
   const match = /^\d+/.exec(choice);
@@ -23,36 +28,83 @@ function extractPort(choice: string): number {
  */
 export async function setupFlow(
   conversation: MyConversation,
-  ctx: BotContext
+  ctx: BotContext,
 ): Promise<void> {
   const telegramId = ctx.from?.id;
   if (!telegramId) return;
 
+  // ------- Show existing SMTP config and allow edit before wizard -------
+  const savedSmtp = await conversation.external(() => getSmtp(telegramId));
+  if (savedSmtp) {
+    const list = `📧 *Current SMTP configuration*\n1️⃣ Host: \`${savedSmtp.host}\`\n2️⃣ Port: \`${savedSmtp.port}\`\n3️⃣ Email: \`${savedSmtp.user}\`\n4️⃣ From name: \`${savedSmtp.senderName ?? "—"}\`\n\nReply with \"N. newValue\" to edit a field (e.g. \"2. 465\") or send /continue to run the full setup wizard.`;
+    await ctx.reply(list, { parse_mode: "Markdown" });
+    const editCtx = await conversation.waitFor("message:text");
+    const editText = editCtx.message.text.trim();
+    if (editText !== "/continue") {
+      const match = editText.match(/^\s*(\d)\.\s*(.+)$/);
+      if (match) {
+        const fieldNum = parseInt(match[1]!, 10);
+        const newVal = match[2]!.trim();
+        const fieldMap: Record<number, keyof UserSmtp> = {
+          1: "host",
+          2: "port",
+          3: "user",
+          4: "senderName",
+        };
+        const field = fieldMap[fieldNum];
+        if (field) {
+          const value = field === "port" ? parseInt(newVal, 10) : newVal;
+          await conversation.external(() =>
+            updateSmtpField(telegramId, field as keyof UserSmtp, value),
+          );
+          await ctx.reply(`✅ Updated \${field} successfully.`, {
+            parse_mode: "Markdown",
+          });
+        } else {
+          await ctx.reply(
+            "⚠️ Unknown field number. Proceeding with full setup.",
+          );
+        }
+      } else {
+        await ctx.reply(
+          "⚠️ Unrecognized edit format. Proceeding with full setup.",
+        );
+      }
+    }
+  }
+
+  // Continue with the original wizard steps
   await ctx.reply(
     "⚙️ *SMTP Setup Wizard*\n\n" +
       "This will configure your personal email so applications are sent *from your own address*.\n\n" +
       "You can cancel at any time by sending /cancel.\n\n" +
       "*Step 1/5* — What is your SMTP host?\n" +
       "Examples: `smtp.gmail.com` · `smtp.office365.com` · `mail.zoho.com`",
-    { parse_mode: "Markdown" }
+    { parse_mode: "Markdown" },
   );
 
   // Step 1: SMTP Host
   const hostCtx = await conversation.waitFor("message:text");
   const host = hostCtx.message.text.trim().toLowerCase();
-  if (host === "/cancel") { await ctx.reply("❌ Setup cancelled."); return; }
+  if (host === "/cancel") {
+    await ctx.reply("❌ Setup cancelled.");
+    return;
+  }
 
   // Step 2: SMTP Port
   await ctx.reply(
     "*Step 2/5* — Which SMTP port?\n\n" +
       PORT_OPTIONS.map((p, i) => `${i + 1}. ${p}`).join("\n") +
       "\n\nReply with the number (1, 2, or 3) or type a custom port.",
-    { parse_mode: "Markdown" }
+    { parse_mode: "Markdown" },
   );
 
   const portCtx = await conversation.waitFor("message:text");
   const portInput = portCtx.message.text.trim();
-  if (portInput === "/cancel") { await ctx.reply("❌ Setup cancelled."); return; }
+  if (portInput === "/cancel") {
+    await ctx.reply("❌ Setup cancelled.");
+    return;
+  }
 
   let port: number;
   const portNum = parseInt(portInput, 10);
@@ -67,16 +119,21 @@ export async function setupFlow(
   // Step 3: Email address
   await ctx.reply(
     `*Step 3/5* — Enter your email address:\n_(This will be the From address on sent emails)_`,
-    { parse_mode: "Markdown" }
+    { parse_mode: "Markdown" },
   );
 
   let emailAddress = "";
   while (!EMAIL_REGEX.test(emailAddress)) {
     const emailCtx = await conversation.waitFor("message:text");
     const input = emailCtx.message.text.trim();
-    if (input === "/cancel") { await ctx.reply("❌ Setup cancelled."); return; }
+    if (input === "/cancel") {
+      await ctx.reply("❌ Setup cancelled.");
+      return;
+    }
     if (!EMAIL_REGEX.test(input)) {
-      await ctx.reply("⚠️ That doesn't look like a valid email address. Please try again:");
+      await ctx.reply(
+        "⚠️ That doesn't look like a valid email address. Please try again:",
+      );
     } else {
       emailAddress = input;
     }
@@ -88,29 +145,37 @@ export async function setupFlow(
       "⚠️ Use an *App Password*, not your regular account password.\n" +
       "For Gmail: [generate here](https://myaccount.google.com/apppasswords) (requires 2FA)\n\n" +
       "_Your password is encrypted with AES-256 and never stored in plaintext._",
-    { parse_mode: "Markdown", link_preview_options: { is_disabled: true } }
+    { parse_mode: "Markdown", link_preview_options: { is_disabled: true } },
   );
 
   const passCtx = await conversation.waitFor("message:text");
   const rawPassword = passCtx.message.text.trim();
-  if (rawPassword === "/cancel") { await ctx.reply("❌ Setup cancelled."); return; }
+  if (rawPassword === "/cancel") {
+    await ctx.reply("❌ Setup cancelled.");
+    return;
+  }
 
   // Clean password: strip all spaces (Google App Passwords are 16 letters often pasted with spaces like "abcd efgh ijkl mnop")
   const cleanPassword = rawPassword.replace(/\s+/g, "");
 
   // Encrypt immediately — never kept in plaintext after this point
-  const encryptedPass = await conversation.external(() => encrypt(cleanPassword));
+  const encryptedPass = await conversation.external(() =>
+    encrypt(cleanPassword),
+  );
 
   // Step 5: Display name
   await ctx.reply(
     "*Step 5/5* — What name should appear in the From field?\n" +
       "Example: `Jane Doe` · Leave blank to use your email address.",
-    { parse_mode: "Markdown" }
+    { parse_mode: "Markdown" },
   );
 
   const nameCtx = await conversation.waitFor("message:text");
   const senderName = nameCtx.message.text.trim() || emailAddress;
-  if (senderName === "/cancel") { await ctx.reply("❌ Setup cancelled."); return; }
+  if (senderName === "/cancel") {
+    await ctx.reply("❌ Setup cancelled.");
+    return;
+  }
 
   // Test the connection
   await ctx.reply("🔌 Testing your SMTP connection...");
@@ -141,15 +206,14 @@ export async function setupFlow(
         `📤 From: *${safeSenderName}* \`<${emailAddress}>\`\n` +
         `🌐 Host: \`${host}:${port}\`\n\n` +
         `You're ready to send applications. Use /mail or /apply to get started!`,
-      { parse_mode: "Markdown" }
+      { parse_mode: "Markdown" },
     );
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
     await ctx.reply(
       `❌ *SMTP connection failed*\n\n\`${message}\`\n\n` +
         "Please check your email and App Password, then run /setup again.",
-      { parse_mode: "Markdown" }
+      { parse_mode: "Markdown" },
     );
   }
 }
-
