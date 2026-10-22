@@ -1,4 +1,4 @@
-import { getDocument } from "pdfjs-dist/legacy/build/pdf.mjs";
+import { PDFParse } from "pdf-parse";
 
 export const MAX_RESUME_SIZE_BYTES = 3 * 1024 * 1024; // 3 MB
 
@@ -71,24 +71,13 @@ export async function downloadTelegramFile(
 }
 
 /**
- * Extracts plain text from a PDF buffer using pdfjs-dist (Mozilla PDF.js).
+ * Extracts plain text from a PDF buffer using pdf-parse v2.
  * Throws a user-friendly error for image-only / scanned PDFs.
  */
 export async function extractResumeText(buffer: Buffer): Promise<string> {
-  const uint8 = new Uint8Array(buffer);
-  const doc = await getDocument({ data: uint8, useSystemFonts: true }).promise;
-
-  const pageTexts: string[] = [];
-  for (let i = 1; i <= doc.numPages; i++) {
-    const page = await doc.getPage(i);
-    const content = await page.getTextContent();
-    const strings = (content.items as Array<{ str?: string }>)
-      .filter((item) => typeof item.str === "string")
-      .map((item) => item.str as string);
-    pageTexts.push(strings.join(" "));
-  }
-
-  const text = pageTexts.join("\n").trim();
+  const parser = new PDFParse({ data: buffer });
+  const result = await parser.getText();
+  const text = result.text.trim();
 
   if (!text || text.length < 50) {
     throw new Error(
@@ -97,5 +86,6 @@ export async function extractResumeText(buffer: Buffer): Promise<string> {
     );
   }
 
+  await parser.destroy();
   return text;
 }
