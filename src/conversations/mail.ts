@@ -4,7 +4,7 @@ import { getUser, getRoles, getCandidateProfile } from "../services/user.js";
 import { tailorApplication } from "../services/ai.js";
 import { sendApplicationEmail } from "../services/mailer.js";
 import type { UserResume, UserRole } from "../models/User.js";
-import { escapeMarkdown } from "../services/format.js";
+import { escapeMarkdown, htmlToTelegramMarkdown } from "../services/format.js";
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -211,15 +211,7 @@ export async function mailFlow(
     .catch(() => {});
 
   // ── Step 6: Application Preview ───────────────────────────────────────────
-  const strippedBody = escapeMarkdown(
-    application.body
-      .replace(/<br\s*\/?>/gi, "\n")
-      .replace(/<\/p>/gi, "\n\n")
-      .replace(/<\/li>/gi, "\n")
-      .replace(/<[^>]+>/g, "")
-      .trim()
-      .slice(0, 2000),
-  );
+  const strippedBody = htmlToTelegramMarkdown(application.body);
 
   let roleDetailsText = "";
   if (selectedRole?.relevantExperience || selectedRole?.expectedCtc) {

@@ -12,7 +12,7 @@ import {
 } from "../services/pdf.js";
 import { tailorApplication } from "../services/ai.js";
 import { sendApplicationEmail } from "../services/mailer.js";
-import { escapeMarkdown } from "../services/format.js";
+import { escapeMarkdown, htmlToTelegramMarkdown } from "../services/format.js";
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -173,15 +173,7 @@ export async function applyFlow(
   // ── Step 5: Preview ─────────────────────────────────────────────────────
   const fromName = escapeMarkdown(user.smtp.senderName ?? user.smtp.user);
   const safeSubject = escapeMarkdown(application.subject);
-  const strippedBody = escapeMarkdown(
-    application.body
-      .replace(/<br\s*\/?>/gi, "\n")
-      .replace(/<\/p>/gi, "\n\n")
-      .replace(/<\/li>/gi, "\n")
-      .replace(/<[^>]+>/g, "")
-      .trim()
-      .slice(0, 2000),
-  );
+  const strippedBody = htmlToTelegramMarkdown(application.body);
 
   const preview =
     `📬 *Application Preview*\n\n` +

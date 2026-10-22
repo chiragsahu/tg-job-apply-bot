@@ -23,9 +23,22 @@ export interface MailResult {
  * Uses inline styles only (required for email client compatibility).
  */
 function wrapHtml(body: string, senderName: string): string {
+  // Ensure strong/bold tags stand out in prominent black formatting (#000000)
+  const styledBody = body.replace(
+    /<(strong|b)(?:\s+[^>]*)?>([\s\S]*?)<\/\1>/gi,
+    '<strong style="color:#000000;font-weight:700;">$2</strong>'
+  );
+
   return `<!DOCTYPE html>
 <html lang="en">
-<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <style>
+    body, p, li { color: #1f2937; }
+    strong, b { color: #000000 !important; font-weight: 700 !important; }
+  </style>
+</head>
 <body style="margin:0;padding:0;background-color:#f4f4f5;font-family:'Segoe UI',Arial,sans-serif;">
   <table width="100%" cellpadding="0" cellspacing="0" style="background-color:#f4f4f5;padding:32px 16px;">
     <tr>
@@ -33,8 +46,8 @@ function wrapHtml(body: string, senderName: string): string {
         <table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:#ffffff;border-radius:8px;box-shadow:0 1px 3px rgba(0,0,0,0.08);overflow:hidden;">
           <!-- Body -->
           <tr>
-            <td style="padding:36px 40px 28px;color:#1a1a2e;font-size:15px;line-height:1.7;">
-              ${body}
+            <td style="padding:36px 40px 28px;color:#1f2937;font-size:15px;line-height:1.7;">
+              ${styledBody}
             </td>
           </tr>
           <!-- Footer -->
@@ -62,6 +75,7 @@ function htmlToPlainText(html: string): string {
     .replace(/<br\s*\/?>/gi, "\n")
     .replace(/<\/p>/gi, "\n\n")
     .replace(/<\/li>/gi, "\n")
+    .replace(/<li[^>]*>/gi, "• ")
     .replace(/<[^>]+>/g, "")
     .replace(/&amp;/g, "&")
     .replace(/&lt;/g, "<")
