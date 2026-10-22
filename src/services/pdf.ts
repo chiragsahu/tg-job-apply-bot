@@ -1,7 +1,8 @@
 import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
-// Import pdf-parse (CommonJS) directly as a function
-const pdfParse = require("pdf-parse");
+// pdf-parse is CJS; in ESM context `require()` wraps it as { default: fn }
+const _pdfParse = require("pdf-parse");
+const pdfParse = typeof _pdfParse === "function" ? _pdfParse : _pdfParse.default;
 
 export const MAX_RESUME_SIZE_BYTES = 3 * 1024 * 1024; // 3 MB
 
