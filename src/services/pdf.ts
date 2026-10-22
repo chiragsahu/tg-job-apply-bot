@@ -1,4 +1,9 @@
-import { PDFParse } from "pdf-parse";
+import { Worker } from "node:worker_threads";
+import { fileURLToPath } from "node:url";
+import path from "node:path";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const WORKER_PATH = path.resolve(__dirname, "../workers/pdf-worker.js");
 
 export const MAX_RESUME_SIZE_BYTES = 3 * 1024 * 1024; // 3 MB
 
@@ -71,21 +76,38 @@ export async function downloadTelegramFile(
 }
 
 /**
- * Extracts plain text from a PDF buffer using pdf-parse v2.
+ * Extracts plain text from a PDF buffer in a Worker thread so it
+ * never blocks the main event loop.
  * Throws a user-friendly error for image-only / scanned PDFs.
  */
-export async function extractResumeText(buffer: Buffer): Promise<string> {
-  const parser = new PDFParse({ data: buffer });
-  const result = await parser.getText();
-  const text = result.text.trim();
+export function extractResumeText(buffer: Buffer): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const worker = new Worker(WORKER_PATH, {
+      workerData: { buffer: buffer.buffer },
+    });
 
-  if (!text || text.length < 50) {
-    throw new Error(
-      "Could not extract text from your PDF. It may be a scanned or image-based PDF. " +
-        "Please upload a text-based PDF (e.g. exported from Word or Google Docs)."
-    );
-  }
+    worker.on("message", (msg: { ok: boolean; text?: string; error?: string }) => {
+      if (msg.ok && msg.text) {
+        if (msg.text.length < 50) {
+          reject(
+            new Error(
+              "Could not extract text from your PDF. It may be a scanned or image-based PDF. " +
+                "Please upload a text-based PDF (e.g. exported from Word or Google Docs)."
+            )
+          );
+        } else {
+          resolve(msg.text);
+        }
+      } else {
+        reject(new Error(msg.error ?? "PDF parsing failed in worker"));
+      }
+    });
 
-  await parser.destroy();
-  return text;
+    worker.on("error", reject);
+    worker.on("exit", (code) => {
+      if (code !== 0) {
+        reject(new Error(`PDF worker exited with code ${code}`));
+      }
+    });
+  });
 }
