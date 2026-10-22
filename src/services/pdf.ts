@@ -1,8 +1,4 @@
-import { createRequire } from "node:module";
-const require = createRequire(import.meta.url);
-// pdf-parse is CJS; in ESM context `require()` wraps it as { default: fn }
-const _pdfParse = require("pdf-parse");
-const pdfParse = typeof _pdfParse === "function" ? _pdfParse : _pdfParse.default;
+import { getDocument } from "pdfjs-dist/legacy/build/pdf.mjs";
 
 export const MAX_RESUME_SIZE_BYTES = 3 * 1024 * 1024; // 3 MB
 
@@ -75,12 +71,24 @@ export async function downloadTelegramFile(
 }
 
 /**
- * Extracts plain text from a PDF buffer using pdf-parse.
+ * Extracts plain text from a PDF buffer using pdfjs-dist (Mozilla PDF.js).
  * Throws a user-friendly error for image-only / scanned PDFs.
  */
 export async function extractResumeText(buffer: Buffer): Promise<string> {
-  const data = await pdfParse(buffer);
-  const text = data.text.trim();
+  const uint8 = new Uint8Array(buffer);
+  const doc = await getDocument({ data: uint8, useSystemFonts: true }).promise;
+
+  const pageTexts: string[] = [];
+  for (let i = 1; i <= doc.numPages; i++) {
+    const page = await doc.getPage(i);
+    const content = await page.getTextContent();
+    const strings = (content.items as Array<{ str?: string }>)
+      .filter((item) => typeof item.str === "string")
+      .map((item) => item.str as string);
+    pageTexts.push(strings.join(" "));
+  }
+
+  const text = pageTexts.join("\n").trim();
 
   if (!text || text.length < 50) {
     throw new Error(
