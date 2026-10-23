@@ -88,12 +88,22 @@ export async function mailFlow(
         const msg = err instanceof Error ? err.message : "Failed to load link";
         await ctx.reply(`⚠️ Could not process link: ${msg}`);
       }
+
+      // Also parse any emails typed alongside the URL (strip URL first so it
+      // doesn't confuse the comma/space split logic)
+      const textWithoutUrl = matchAfterCommand.replace(urlInCommand, " ").trim();
+      const parsedAlongside = parseEmails(textWithoutUrl);
+      if (parsedAlongside.length > 0) {
+        recipientEmails.push(...parsedAlongside);
+      }
+    } else {
+      // No URL — treat entire input as email list
+      const parsedDirect = parseEmails(matchAfterCommand);
+      if (parsedDirect.length > 0) {
+        recipientEmails.push(...parsedDirect);
+      }
     }
 
-    const parsedDirect = parseEmails(matchAfterCommand);
-    if (parsedDirect.length > 0) {
-      recipientEmails.push(...parsedDirect);
-    }
     recipientEmails = Array.from(new Set(recipientEmails));
   }
 
@@ -151,12 +161,23 @@ export async function mailFlow(
         const msg = err instanceof Error ? err.message : "Failed to load link";
         await ctx.reply(`⚠️ Could not process link: ${msg}`);
       }
+
+      // Also capture any emails typed alongside the URL (strip URL first to
+      // avoid confusing the email parser with URL characters)
+      const textWithoutUrl = input.replace(urlInInput, " ").trim();
+      const parsedAlongside = parseEmails(textWithoutUrl);
+      if (parsedAlongside.length > 0) {
+        recipientEmails.push(...parsedAlongside);
+      }
+    } else {
+      // No URL — treat entire input as a plain email list
+      const parsed = parseEmails(input);
+      if (parsed.length > 0) {
+        recipientEmails.push(...parsed);
+      }
     }
 
-    const parsed = parseEmails(input);
-    if (parsed.length > 0) {
-      recipientEmails.push(...parsed);
-    }
+    // Deduplicate after every round
     recipientEmails = Array.from(new Set(recipientEmails));
 
     if (recipientEmails.length === 0 && !urlInInput) {

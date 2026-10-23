@@ -1,9 +1,9 @@
-name: Deploy Bot to HeavenCloud
+name: Deploy Telegram Bot to EC2
 
 on:
   push:
     branches:
-      - main # Change to master if your default branch is named master
+      - main # Change to dev if deploying from dev
 
 jobs:
   build-and-deploy:
@@ -17,35 +17,81 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
+          cache: 'npm'
 
       - name: 3. Install dependencies and compile TypeScript
         run: |
-          npm install
+          npm ci || npm install
           npm run build
           cp package.json dist/
+          [ -f package-lock.json ] && cp package-lock.json dist/ || true
 
-      - name: 4. Upload build to HeavenCloud via SFTP
-        uses: wlixcc/SFTP-Deploy-Action@v1.2.6
+      - name: 4. Upload build to EC2 via SSH
+        uses: easingthemes/ssh-deploy@v5.0.3
         with:
-          server: ${{ secrets.SFTP_HOST }}
-          port: ${{ secrets.SFTP_PORT }}
-          username: ${{ secrets.SFTP_USER }}
-          password: ${{ secrets.SFTP_PASSWORD }}
-          local_path: './dist/'
-          remote_path: './'
-          sftp_only: true
+          SSH_PRIVATE_KEY: ${{ secrets.EC2_SSH_KEY }}
+          REMOTE_HOST: ${{ secrets.EC2_HOST }}
+          REMOTE_USER: ${{ secrets.EC2_USER }}
+          TARGET: /home/ec2-user/code/tgbot/
+          SOURCE: "dist/"
+          EXCLUDE: "node_modules/, .git/, src/, tsconfig.json, .env"
 
-      - name: 5. Restart server via Pterodactyl API
+      - name: 5. Install runtime dependencies and restart PM2
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            cd /home/ec2-user/code/tgbot
+            npm install --omit=dev
+            pm2 reload tgbot || pm2 start index.js --name "tgbot"
+            pm2 savename: Deploy Telegram Bot to EC2
+
+on:
+  push:
+    branches:
+      - main # Change to dev if deploying from dev
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 1. Checkout repository
+        uses: actions/checkout@v4
+
+      - name: 2. Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+
+      - name: 3. Install dependencies and compile TypeScript
         run: |
-          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
-            "https://control.heavencloud.in/api/client/servers/${{ secrets.PTERO_SERVER_ID }}/power" \
-            -H "Authorization: Bearer ${{ secrets.PTERO_API_KEY }}" \
-            -H "Content-Type: application/json" \
-            -H "Accept: application/json" \
-            -d '{"signal": "restart"}')
+          npm ci || npm install
+          npm run build
+          cp package.json dist/
+          [ -f package-lock.json ] && cp package-lock.json dist/ || true
 
-          echo "Pterodactyl API responded with HTTP status: $HTTP_STATUS"
-          if [ "$HTTP_STATUS" -ne 204 ]; then
-            echo "Failed to restart server. Received HTTP status $HTTP_STATUS. Please verify PTERO_API_KEY and PTERO_SERVER_ID."
-            exit 1
-          fi
+      - name: 4. Upload build to EC2 via SSH
+        uses: easingthemes/ssh-deploy@v5.0.3
+        with:
+          SSH_PRIVATE_KEY: ${{ secrets.EC2_SSH_KEY }}
+          REMOTE_HOST: ${{ secrets.EC2_HOST }}
+          REMOTE_USER: ${{ secrets.EC2_USER }}
+          TARGET: /home/ec2-user/code/tgbot/
+          SOURCE: "dist/"
+          EXCLUDE: "node_modules/, .git/, src/, tsconfig.json, .env"
+
+      - name: 5. Install runtime dependencies and restart PM2
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            cd /home/ec2-user/code/tgbot
+            npm install --omit=dev
+            pm2 reload tgbot || pm2 start index.js --name "tgbot"
+            pm2 save
