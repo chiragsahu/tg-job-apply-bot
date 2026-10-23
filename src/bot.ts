@@ -320,10 +320,14 @@ async function main(): Promise<void> {
     }
   });
 
-  // ── /mail Command ──────────────────────────────────────────────────────────
+  // ── /mail & /apply Commands ────────────────────────────────────────────────
 
   bot.command("mail", async (ctx) => {
     await ctx.conversation.enter("mailFlow");
+  });
+
+  bot.command("apply", async (ctx) => {
+    await ctx.conversation.enter("applyFlow");
   });
 
 

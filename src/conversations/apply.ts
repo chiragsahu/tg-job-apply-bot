@@ -13,6 +13,7 @@ import {
 import { tailorApplication } from "../services/ai.js";
 import { sendApplicationEmail } from "../services/mailer.js";
 import { escapeMarkdown, htmlToTelegramMarkdown } from "../services/format.js";
+import { extractUrl, fetchJobPage } from "../services/scraper.js";
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -99,26 +100,138 @@ export async function applyFlow(
 
   const resume = user.resume!;
 
-  // ── Step 2: Job Description ─────────────────────────────────────────────
-  await ctx.reply(
-    "📋 *Step 1 of 3 — Job Description*\n\n" +
-      "Paste the job posting, description, or requirements below:",
-    { parse_mode: "Markdown" },
-  );
+  // Check if job link or email was passed in initial command (e.g. /apply https://...)
+  const initialText = ctx.message?.text ?? "";
+  const matchAfterCommand = initialText.replace(/^\/apply(@\w+)?/i, "").trim();
+  let prefilledDesc = "";
+  let prefilledTitle = "";
+  let prefilledCompany = "";
+  let detectedEmails: string[] = [];
 
-  const jdCtx = await conversation.waitFor("message:text");
-  const jobDesc = jdCtx.message.text.trim();
-  if (jobDesc === "/cancel") {
-    await ctx.reply("❌ Cancelled.");
-    return;
+  if (matchAfterCommand) {
+    const urlInCommand = extractUrl(matchAfterCommand);
+    if (urlInCommand) {
+      const waitMsg = await ctx.reply(
+        "🌐 *Fetching Job Link...*\n\nReading job description and searching for recruiter email...",
+        { parse_mode: "Markdown" },
+      );
+      try {
+        const page = await conversation.external(() => fetchJobPage(urlInCommand));
+        prefilledDesc = page.description;
+        prefilledTitle = page.title || "";
+        prefilledCompany = page.company || "";
+        detectedEmails = page.emails;
+        await ctx.api.deleteMessage(ctx.chat!.id, waitMsg.message_id).catch(() => {});
+
+        let linkFeedback = `🌐 *Job Link Processed:*\n`;
+        if (prefilledTitle) linkFeedback += `📌 *Position:* ${escapeMarkdown(prefilledTitle)}\n`;
+        if (prefilledCompany) linkFeedback += `🏢 *Company:* ${escapeMarkdown(prefilledCompany)}\n`;
+        linkFeedback += `📋 *Description:* Extracted (${prefilledDesc.length} characters)\n`;
+        if (detectedEmails.length > 0) {
+          linkFeedback += `📧 *Found Recruiter Email:* \`${detectedEmails.join(", ")}\`\n`;
+        }
+        await ctx.reply(linkFeedback, { parse_mode: "Markdown" });
+      } catch (err) {
+        await ctx.api.deleteMessage(ctx.chat!.id, waitMsg.message_id).catch(() => {});
+        const msg = err instanceof Error ? err.message : "Failed to load link";
+        await ctx.reply(`⚠️ Could not process link: ${msg}`);
+      }
+    }
+  }
+
+  // ── Step 2: Job Description ─────────────────────────────────────────────
+  let jobDesc = prefilledDesc;
+
+  if (jobDesc) {
+    let msg = "📋 *Step 1 of 3 — Job Description*\n\n";
+    msg += "✅ *Job description already extracted from link!*\n";
+    if (prefilledTitle) msg += `📌 *Position:* ${escapeMarkdown(prefilledTitle)}\n`;
+    if (prefilledCompany) msg += `🏢 *Company:* ${escapeMarkdown(prefilledCompany)}\n`;
+    msg += "\nSend /skip to use this description, or paste a new job description / link below:\n\n_Send /cancel to abort._";
+    await ctx.reply(msg, { parse_mode: "Markdown" });
+
+    const jdCtx = await conversation.waitFor("message:text");
+    const jdInput = jdCtx.message.text.trim();
+    if (jdInput === "/cancel") {
+      await ctx.reply("❌ Cancelled.");
+      return;
+    }
+    if (jdInput !== "/skip") {
+      const url = extractUrl(jdInput);
+      if (url) {
+        const waitMsg = await ctx.reply("🌐 *Fetching Job Link...*", { parse_mode: "Markdown" });
+        try {
+          const page = await conversation.external(() => fetchJobPage(url));
+          jobDesc = page.description;
+          if (page.emails.length > 0) detectedEmails = page.emails;
+          await ctx.api.deleteMessage(ctx.chat!.id, waitMsg.message_id).catch(() => {});
+          await ctx.reply(`🌐 Extracted ${page.description.length} characters from link.`, { parse_mode: "Markdown" });
+        } catch (err) {
+          await ctx.api.deleteMessage(ctx.chat!.id, waitMsg.message_id).catch(() => {});
+          jobDesc = jdInput;
+        }
+      } else {
+        jobDesc = jdInput;
+      }
+    }
+  } else {
+    await ctx.reply(
+      "📋 *Step 1 of 3 — Job Description*\n\n" +
+        "Paste the job posting, description, or paste a job link below:\n\n" +
+        "_Send /cancel to abort._",
+      { parse_mode: "Markdown" },
+    );
+
+    const jdCtx = await conversation.waitFor("message:text");
+    const jdInput = jdCtx.message.text.trim();
+    if (jdInput === "/cancel") {
+      await ctx.reply("❌ Cancelled.");
+      return;
+    }
+
+    const url = extractUrl(jdInput);
+    if (url) {
+      const waitMsg = await ctx.reply(
+        "🌐 *Fetching Job Link...*\n\nReading job description and searching for recruiter email...",
+        { parse_mode: "Markdown" },
+      );
+      try {
+        const page = await conversation.external(() => fetchJobPage(url));
+        jobDesc = page.description;
+        detectedEmails = page.emails;
+        await ctx.api.deleteMessage(ctx.chat!.id, waitMsg.message_id).catch(() => {});
+
+        let feedback = `🌐 *Job Description Extracted from Link!*\n`;
+        if (page.title) feedback += `📌 *Position:* ${escapeMarkdown(page.title)}\n`;
+        if (page.company) feedback += `🏢 *Company:* ${escapeMarkdown(page.company)}\n`;
+        feedback += `📋 ${page.description.length} characters loaded.\n`;
+        if (detectedEmails.length > 0) {
+          feedback += `📧 *Found Recruiter Email:* \`${detectedEmails.join(", ")}\`\n`;
+        }
+        await ctx.reply(feedback, { parse_mode: "Markdown" });
+      } catch (err) {
+        await ctx.api.deleteMessage(ctx.chat!.id, waitMsg.message_id).catch(() => {});
+        const msg = err instanceof Error ? err.message : "Failed to load link";
+        await ctx.reply(`⚠️ Could not process link: ${msg}\nUsing input as plain text description.`);
+        jobDesc = jdInput;
+      }
+    } else {
+      jobDesc = jdInput;
+    }
   }
 
   // ── Step 3: Recipient Email ─────────────────────────────────────────────
-  await ctx.reply(
+  let emailPrompt =
     "📧 *Step 2 of 3 — Recipient Email*\n\n" +
-      "What is the recruiter or HR email address?",
-    { parse_mode: "Markdown" },
-  );
+    "What is the recruiter or HR email address?";
+
+  if (detectedEmails.length > 0) {
+    emailPrompt +=
+      `\n\n💡 *Found from job link:* \`${detectedEmails[0]}\`\n` +
+      `Send /skip to use this email, or enter a different recruiter email:`;
+  }
+
+  await ctx.reply(emailPrompt, { parse_mode: "Markdown" });
 
   let recipientEmail = "";
   while (!EMAIL_REGEX.test(recipientEmail)) {
@@ -128,6 +241,32 @@ export async function applyFlow(
       await ctx.reply("❌ Cancelled.");
       return;
     }
+    if (input === "/skip" && detectedEmails.length > 0) {
+      recipientEmail = detectedEmails[0]!;
+      break;
+    }
+
+    const urlInEmail = extractUrl(input);
+    if (urlInEmail) {
+      const waitMsg = await ctx.reply("🌐 *Fetching link for recruiter email...*", { parse_mode: "Markdown" });
+      try {
+        const page = await conversation.external(() => fetchJobPage(urlInEmail));
+        await ctx.api.deleteMessage(ctx.chat!.id, waitMsg.message_id).catch(() => {});
+        if (page.emails.length > 0) {
+          recipientEmail = page.emails[0]!;
+          await ctx.reply(`✅ Using recruiter email found in link: \`${recipientEmail}\``, { parse_mode: "Markdown" });
+          break;
+        } else {
+          await ctx.reply("⚠️ No recruiter email found in that link. Please enter the email address:");
+          continue;
+        }
+      } catch (err) {
+        await ctx.api.deleteMessage(ctx.chat!.id, waitMsg.message_id).catch(() => {});
+        await ctx.reply("⚠️ Could not load link. Please enter the recruiter email:");
+        continue;
+      }
+    }
+
     if (!EMAIL_REGEX.test(input)) {
       await ctx.reply(
         "⚠️ That doesn't look like a valid email. Please try again:",

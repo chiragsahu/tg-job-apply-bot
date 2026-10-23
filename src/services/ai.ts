@@ -10,6 +10,15 @@ const client = new OpenAI({
   },
 });
 
+export interface ParsedJobInfo {
+  /** Recruiter / HR / contact emails found on the page */
+  emails: string[];
+  /** Job title / role name */
+  title?: string;
+  /** Company name */
+  company?: string;
+}
+
 export interface TailoredApplication {
   subject: string;
   body: string; // HTML string using <p>, <strong>, <ul><li> only
@@ -88,7 +97,8 @@ Rules:
 - Keep body under 380 words.
 - Extract only skills and experiences that genuinely appear in the resume or candidate details.
 - Do NOT invent or hallucinate qualifications.
-- Technical Skills Formatting: Make key technical skills, tools, frameworks, and technologies (such as CI/CD, Docker, Kubernetes, AWS, languages/frameworks) bold using <strong> tags (e.g. <strong>CI/CD</strong>, <strong>Docker</strong>) throughout the email body so they stand out boldly in black formatting.
+- Keyword & Skill Alignment: Carefully analyze the Job Description to extract its core requirements, technical keywords, tools, and responsibilities. Cross-reference them with the candidate's Resume and skills. You MUST explicitly mention these matching relevant keywords and skills in the email content, directly aligning the candidate's hands-on experience and achievements with the employer's needs.
+- Technical Skills Formatting: Make key technical skills, tools, frameworks, and technologies (such as CI/CD, Docker, Kubernetes, AWS, languages/frameworks, and matching JD keywords) bold using <strong> tags (e.g. <strong>CI/CD</strong>, <strong>Docker</strong>) throughout the email body so they stand out boldly in black formatting.
 - Section Name: If candidate screening details/relevant info are provided, title this section strictly as "Relevant Info" (e.g., <p><strong>Relevant Info:</strong></p>). Do NOT name it "Candidate Screening Details".
 - Bold Values in Relevant Info: Present the Relevant Info as a bulleted list (<ul><li>). For every item, bold the value using <strong> (e.g., <li>Total Experience: <strong>5 Years</strong></li>, <li>Relevant Experience: <strong>3+ Years</strong></li>, <li>Notice Period / LWD: <strong>15 Days</strong></li>, <li>Current Location: <strong>Bengaluru</strong></li>, <li>Expected CTC: <strong>Negotiable</strong></li>).
 - Strictly No Generic Interview Call-to-Action: Do NOT generate filler or boilerplate closing interview-request paragraphs after the content (such as "I would welcome the opportunity to discuss how my expertise aligns with your requirements. Please let me know a convenient time for an interview." or similar variants). Conclude directly with a polite sign-off (e.g., <p>Best regards,<br>[Candidate Name]</p>).
@@ -178,5 +188,116 @@ export async function tailorApplication(
     return parsed;
   }
 }
+/**
+ * Uses OpenAI function-calling (tool use) to extract structured info from a
+ * job page's text content: recruiter/HR emails + job title + company.
+ *
+ * Falls back to empty results if the model cannot extract anything useful.
+ */
+export async function parseJobPageWithAI(
+  pageContent: string,
+  pageUrl?: string
+): Promise<ParsedJobInfo> {
+  const model = process.env["OPENROUTER_MODEL"] ?? "openai/gpt-4o-mini";
 
+  // Truncate to avoid blowing token limits; 6000 chars gives ample context
+  const truncated =
+    pageContent.length > 6000
+      ? pageContent.slice(0, 6000) + "\n...[truncated]"
+      : pageContent;
 
+  const systemPrompt = [
+    "You are a job page parser. Your ONLY task is to call the extract_job_info tool with information found in the given job posting text.",
+    "For emails: only include actual recruiter, HR, or hiring-contact emails. Ignore placeholder, example, noreply, and generic marketing emails.",
+    "If you cannot find an email, return an empty array for emails.",
+    "If you cannot find a title or company, omit those fields.",
+  ].join(" ");
+
+  const userMessage = [
+    pageUrl ? `URL: ${pageUrl}` : "",
+    "---",
+    "JOB PAGE CONTENT:",
+    truncated,
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+  const extractTool: OpenAI.Chat.ChatCompletionTool = {
+    type: "function",
+    function: {
+      name: "extract_job_info",
+      description:
+        "Extract recruiter/HR contact emails, the job title, and the company name from a job posting page.",
+      parameters: {
+        type: "object",
+        properties: {
+          emails: {
+            type: "array",
+            items: { type: "string" },
+            description:
+              "List of recruiter, HR, or hiring-contact email addresses found on the page. Exclude placeholder, noreply, or generic marketing emails.",
+          },
+          title: {
+            type: "string",
+            description: "The job title or role name advertised in this posting.",
+          },
+          company: {
+            type: "string",
+            description: "The name of the hiring company or organisation.",
+          },
+        },
+        required: ["emails"],
+      },
+    },
+  };
+
+  try {
+    const response = await client.chat.completions.create({
+      model,
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userMessage },
+      ],
+      tools: [extractTool],
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      tool_choice: { type: "function", function: { name: "extract_job_info" } } as any,
+    });
+
+    const rawToolCall = response.choices[0]?.message?.tool_calls?.[0];
+    // Narrow to the standard function-call variant (has a .function property)
+    if (
+      !rawToolCall ||
+      !("function" in rawToolCall) ||
+      (rawToolCall as { function?: { name: string } }).function?.name !==
+        "extract_job_info"
+    ) {
+      return { emails: [] };
+    }
+
+    const fnCall = rawToolCall as {
+      function: { name: string; arguments: string };
+    };
+
+    const args = JSON.parse(fnCall.function.arguments) as {
+      emails?: unknown;
+      title?: unknown;
+      company?: unknown;
+    };
+
+    const emails = Array.isArray(args.emails)
+      ? (args.emails as string[]).filter(
+          (e) => typeof e === "string" && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)
+        )
+      : [];
+
+    const result: ParsedJobInfo = { emails };
+    if (typeof args.title === "string" && args.title) result.title = args.title;
+    if (typeof args.company === "string" && args.company)
+      result.company = args.company;
+
+    return result;
+  } catch {
+    // Non-fatal: caller will fall back to regex-extracted data
+    return { emails: [] };
+  }
+}
