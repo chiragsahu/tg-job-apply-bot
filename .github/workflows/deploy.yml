@@ -44,5 +44,5 @@ jobs:
           script: |
             cd /home/ec2-user/code/tgbot
             npm install --omit=dev
-            pm2 reload tgbot || pm2 start index.js --name "tgbot"
+            pm2 reload tgbot || pm2 start bot.js --name "tgbot"
             pm2 save
