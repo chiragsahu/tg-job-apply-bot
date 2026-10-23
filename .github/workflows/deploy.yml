@@ -3,7 +3,7 @@ name: Deploy Telegram Bot to EC2
 on:
   push:
     branches:
-      - main # Change to dev if deploying from dev
+      - main
 
 jobs:
   build-and-deploy:
@@ -17,59 +17,10 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: 'npm'
 
       - name: 3. Install dependencies and compile TypeScript
         run: |
-          npm ci || npm install
-          npm run build
-          cp package.json dist/
-          [ -f package-lock.json ] && cp package-lock.json dist/ || true
-
-      - name: 4. Upload build to EC2 via SSH
-        uses: easingthemes/ssh-deploy@v5.0.3
-        with:
-          SSH_PRIVATE_KEY: ${{ secrets.EC2_SSH_KEY }}
-          REMOTE_HOST: ${{ secrets.EC2_HOST }}
-          REMOTE_USER: ${{ secrets.EC2_USER }}
-          TARGET: /home/ec2-user/code/tgbot/
-          SOURCE: "dist/"
-          EXCLUDE: "node_modules/, .git/, src/, tsconfig.json, .env"
-
-      - name: 5. Install runtime dependencies and restart PM2
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.EC2_HOST }}
-          username: ${{ secrets.EC2_USER }}
-          key: ${{ secrets.EC2_SSH_KEY }}
-          script: |
-            cd /home/ec2-user/code/tgbot
-            npm install --omit=dev
-            pm2 reload tgbot || pm2 start index.js --name "tgbot"
-            pm2 savename: Deploy Telegram Bot to EC2
-
-on:
-  push:
-    branches:
-      - main # Change to dev if deploying from dev
-
-jobs:
-  build-and-deploy:
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: 1. Checkout repository
-        uses: actions/checkout@v4
-
-      - name: 2. Setup Node.js 22
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: 'npm'
-
-      - name: 3. Install dependencies and compile TypeScript
-        run: |
-          npm ci || npm install
+          npm install
           npm run build
           cp package.json dist/
           [ -f package-lock.json ] && cp package-lock.json dist/ || true
@@ -95,4 +46,3 @@ jobs:
             npm install --omit=dev
             pm2 reload tgbot || pm2 start index.js --name "tgbot"
             pm2 save
-            
