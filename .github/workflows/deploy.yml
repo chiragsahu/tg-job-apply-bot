@@ -95,3 +95,4 @@ jobs:
             npm install --omit=dev
             pm2 reload tgbot || pm2 start index.js --name "tgbot"
             pm2 save
+            
