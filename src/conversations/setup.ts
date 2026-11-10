@@ -1,8 +1,10 @@
+import { InlineKeyboard } from "grammy";
 import type { BotContext, MyConversation } from "../types.js";
 import { encrypt } from "../services/crypto.js";
 import type { UserSmtp } from "../models/User.js";
 import { getSmtp, updateSmtp, updateSmtpField } from "../services/user.js";
 import { escapeMarkdown } from "../services/format.js";
+import { verifySmtp } from "../services/mailer.js";
 import nodemailer from "nodemailer";
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -36,15 +38,90 @@ export async function setupFlow(
   // ------- Show existing SMTP config and allow edit before wizard -------
   const savedSmtp = await conversation.external(() => getSmtp(telegramId));
   if (savedSmtp) {
-    const list = `📧 *Current SMTP configuration*\n1️⃣ Host: \`${savedSmtp.host}\`\n2️⃣ Port: \`${savedSmtp.port}\`\n3️⃣ Email: \`${savedSmtp.user}\`\n4️⃣ From name: \`${savedSmtp.senderName ?? "—"}\`\n\nReply with \"N. newValue\" to edit a field (e.g. \"2. 465\") or send /continue to run the full setup wizard.`;
-    await ctx.reply(list, { parse_mode: "Markdown" });
-    const editCtx = await conversation.waitFor("message:text");
-    const editText = editCtx.message.text.trim();
-    if (editText !== "/continue") {
-      const match = editText.match(/^\s*(\d)\.\s*(.+)$/);
+    const list =
+      `📧 *Current SMTP configuration*\n` +
+      `1️⃣ Host: \`${savedSmtp.host}\`\n` +
+      `2️⃣ Port: \`${savedSmtp.port}\`\n` +
+      `3️⃣ Email: \`${savedSmtp.user}\`\n` +
+      `4️⃣ From name: \`${savedSmtp.senderName ?? "—"}\`\n\n` +
+      `Reply with "N. newValue" to edit a field (e.g. "2. 465"), send /continue to run the full setup wizard, or /cancel to exit.`;
+
+    const keyboard = new InlineKeyboard()
+      .text("🔌 Test Connection", "test_smtp")
+      .row()
+      .text("⚙️ Run Full Setup", "continue_setup")
+      .text("❌ Cancel", "cancel_setup");
+
+    await ctx.reply(list, { parse_mode: "Markdown", reply_markup: keyboard });
+
+    while (true) {
+      const updateCtx = await conversation.waitFor([
+        "message:text",
+        "callback_query:data",
+      ]);
+
+      if (updateCtx.callbackQuery) {
+        await updateCtx.answerCallbackQuery();
+        const action = updateCtx.callbackQuery.data;
+
+        if (action === "cancel_setup") {
+          await ctx.reply("❌ Setup cancelled.");
+          return;
+        }
+
+        if (action === "continue_setup") {
+          break;
+        }
+
+        if (action === "test_smtp") {
+          await ctx.reply("🔌 Testing your SMTP connection...");
+          try {
+            const currentSmtp =
+              (await conversation.external(() => getSmtp(telegramId))) ??
+              savedSmtp;
+            await conversation.external(() => verifySmtp(currentSmtp));
+            await ctx.reply(
+              `✅ *SMTP connection verified successfully!*\n\n` +
+                `📤 From: \`${currentSmtp.user}\`\n` +
+                `🌐 Host: \`${currentSmtp.host}:${currentSmtp.port}\``,
+              { parse_mode: "Markdown" },
+            );
+          } catch (err) {
+            const message =
+              err instanceof Error ? err.message : "Unknown error";
+            await ctx.reply(
+              `❌ *SMTP connection failed*\n\n\`${message}\`\n\n` +
+                `Please check your credentials or edit fields by replying with "N. newValue".`,
+              { parse_mode: "Markdown" },
+            );
+          }
+          continue;
+        }
+      }
+
+      const editText = updateCtx.message?.text?.trim() ?? "";
+
+      if (editText === "/cancel") {
+        await ctx.reply("❌ Setup cancelled.");
+        return;
+      }
+
+      if (editText === "/continue") {
+        break;
+      }
+
+      const match = editText.match(/^\s*(\d+)\s*[.:\-]?\s*(.+)$/);
       if (match) {
         const fieldNum = parseInt(match[1]!, 10);
         const newVal = match[2]!.trim();
+
+        if (!newVal) {
+          await ctx.reply(
+            "⚠️ Please provide a new value for the field (e.g. \"2. 465\"), send /continue for full wizard, or /cancel to exit:",
+          );
+          continue;
+        }
+
         const fieldMap: Record<number, keyof UserSmtp> = {
           1: "host",
           2: "port",
@@ -52,24 +129,65 @@ export async function setupFlow(
           4: "senderName",
         };
         const field = fieldMap[fieldNum];
-        if (field) {
-          const value = field === "port" ? parseInt(newVal, 10) : newVal;
-          await conversation.external(() =>
-            updateSmtpField(telegramId, field as keyof UserSmtp, value),
-          );
-          await ctx.reply(`✅ Updated \${field} successfully.`, {
-            parse_mode: "Markdown",
-          });
-        } else {
+
+        if (!field) {
           await ctx.reply(
-            "⚠️ Unknown field number. Proceeding with full setup.",
+            "⚠️ Unknown field number (choose 1-4). Please try again, send /continue for full wizard, or /cancel to exit:",
           );
+          continue;
         }
-      } else {
-        await ctx.reply(
-          "⚠️ Unrecognized edit format. Proceeding with full setup.",
+
+        const testKb = new InlineKeyboard().text(
+          "🔌 Test Connection",
+          "test_smtp",
         );
+
+        if (field === "port") {
+          const portVal = parseInt(newVal, 10);
+          if (isNaN(portVal) || portVal <= 0 || portVal > 65535) {
+            await ctx.reply(
+              "⚠️ Invalid port number. Please enter a valid port (e.g. \"2. 587\"): ",
+            );
+            continue;
+          }
+          await conversation.external(() =>
+            updateSmtpField(telegramId, field, portVal),
+          );
+          await ctx.reply(`✅ Updated ${field} successfully.`, {
+            reply_markup: testKb,
+          });
+          return;
+        }
+
+        if (field === "user") {
+          if (!EMAIL_REGEX.test(newVal)) {
+            await ctx.reply(
+              "⚠️ That doesn't look like a valid email address. Please try again (e.g. \"3. name@example.com\"): ",
+            );
+            continue;
+          }
+          await conversation.external(() =>
+            updateSmtpField(telegramId, field, newVal),
+          );
+          await ctx.reply(`✅ Updated ${field} successfully.`, {
+            reply_markup: testKb,
+          });
+          return;
+        }
+
+        const value = field === "host" ? newVal.toLowerCase() : newVal;
+        await conversation.external(() =>
+          updateSmtpField(telegramId, field, value),
+        );
+        await ctx.reply(`✅ Updated ${field} successfully.`, {
+          reply_markup: testKb,
+        });
+        return;
       }
+
+      await ctx.reply(
+        "⚠️ Unrecognized edit format. Reply with \"N. newValue\" (e.g. \"2. 465\"), send /continue to run the full setup wizard, or /cancel to exit.",
+      );
     }
   }
 

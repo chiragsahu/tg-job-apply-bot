@@ -29,6 +29,7 @@ import {
   validateResumeDocument,
 } from "./services/pdf.js";
 import { escapeMarkdown } from "./services/format.js";
+import { verifySmtp } from "./services/mailer.js";
 
 import { setupFlow } from "./conversations/setup.js";
 import { templateFlow } from "./conversations/template.js";
@@ -111,6 +112,7 @@ async function main(): Promise<void> {
       `📖 *Commands*\n\n` +
         `*📧 Email Setup*\n` +
         `/setup — Configure your SMTP email account\n` +
+        `/test\\_smtp — Test your saved SMTP connection\n` +
         `/delete\\_smtp — Remove your saved email config\n\n` +
         `*🎯 Job Roles & Resumes (1:1)*\n` +
         `/roles — View and manage your job roles\n` +
@@ -215,7 +217,14 @@ async function main(): Promise<void> {
       lines.push("📝 *Template:* ❌ Not set — /set\\_template");
     }
 
-    await ctx.reply(lines.join("\n"), { parse_mode: "Markdown" });
+    const profileKeyboard = user.smtp
+      ? new InlineKeyboard().text("🔌 Test SMTP", "test_smtp")
+      : undefined;
+
+    await ctx.reply(lines.join("\n"), {
+      parse_mode: "Markdown",
+      ...(profileKeyboard ? { reply_markup: profileKeyboard } : {}),
+    });
   });
 
 
@@ -335,6 +344,34 @@ async function main(): Promise<void> {
 
   bot.command("setup", async (ctx) => {
     await ctx.conversation.enter("setupFlow");
+  });
+
+  bot.command("test_smtp", async (ctx) => {
+    const user = await getUser(ctx.from!.id);
+    if (!user?.smtp) {
+      await ctx.reply(
+        "ℹ️ No SMTP configuration found. Run /setup to configure your email account.",
+      );
+      return;
+    }
+
+    await ctx.reply("🔌 Testing your SMTP connection...");
+    try {
+      await verifySmtp(user.smtp);
+      await ctx.reply(
+        `✅ *SMTP connection verified successfully!*\n\n` +
+          `📤 From: \`${user.smtp.user}\`\n` +
+          `🌐 Host: \`${user.smtp.host}:${user.smtp.port}\``,
+        { parse_mode: "Markdown" },
+      );
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Unknown error";
+      await ctx.reply(
+        `❌ *SMTP connection failed*\n\n\`${message}\`\n\n` +
+          "Please check your credentials or run /setup to update them.",
+        { parse_mode: "Markdown" },
+      );
+    }
   });
 
   bot.command("delete_smtp", async (ctx) => {
@@ -475,6 +512,35 @@ async function main(): Promise<void> {
   });
 
   // ── Callback Query Handlers (confirmations) ───────────────────────────────
+  bot.callbackQuery("test_smtp", async (ctx) => {
+    await ctx.answerCallbackQuery();
+    const user = await getUser(ctx.from.id);
+    if (!user?.smtp) {
+      await ctx.reply(
+        "ℹ️ No SMTP configuration found. Run /setup to configure your email account.",
+      );
+      return;
+    }
+
+    await ctx.reply("🔌 Testing your SMTP connection...");
+    try {
+      await verifySmtp(user.smtp);
+      await ctx.reply(
+        `✅ *SMTP connection verified successfully!*\n\n` +
+          `📤 From: \`${user.smtp.user}\`\n` +
+          `🌐 Host: \`${user.smtp.host}:${user.smtp.port}\``,
+        { parse_mode: "Markdown" },
+      );
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Unknown error";
+      await ctx.reply(
+        `❌ *SMTP connection failed*\n\n\`${message}\`\n\n` +
+          "Please check your credentials or run /setup to update them.",
+        { parse_mode: "Markdown" },
+      );
+    }
+  });
+
   bot.callbackQuery("confirm_delete_smtp", async (ctx) => {
     await ctx.answerCallbackQuery();
     await deleteSmtp(ctx.from.id);

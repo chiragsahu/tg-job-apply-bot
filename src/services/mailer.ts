@@ -86,6 +86,23 @@ function htmlToPlainText(html: string): string {
 }
 
 /**
+ * Verifies that the user's SMTP configuration can connect and authenticate.
+ */
+export async function verifySmtp(userSmtp: UserSmtp): Promise<void> {
+  const smtpPass = decrypt(userSmtp.encryptedPass);
+  const transporter = nodemailer.createTransport({
+    host: userSmtp.host,
+    port: userSmtp.port,
+    secure: userSmtp.port === 465,
+    auth: {
+      user: userSmtp.user,
+      pass: smtpPass,
+    },
+  });
+  await transporter.verify();
+}
+
+/**
  * Sends a job application email using the user's own SMTP credentials.
  *
  * Flow:
