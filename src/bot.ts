@@ -47,13 +47,17 @@ if (!process.env["MONGODB_URI"]) throw new Error("MONGODB_URI is not set in .env
 if (!process.env["ENCRYPTION_KEY"]) throw new Error("ENCRYPTION_KEY is not set in .env");
 if (!process.env["OPEN_AI_KEY"]) throw new Error("OPEN_AI_KEY is not set in .env");
 
-// ── Home ReplyKeyboard ─────────────────────────────────────────────────────
+// ── Home ReplyKeyboard (3×3 grid) ──────────────────────────────────────────
 const HOME_KEYBOARD = new Keyboard()
-  .text("🚀 Apply").text("📧 Bulk Mail").row()
-  .text("⚙️ SMTP Setup").text("📝 Template").row()
-  .text("👔 Roles").text("👤 Profile").row()
-  .text("📄 Resume").text("❓ Help").row()
-  .text("🔌 Test SMTP").text("✏️ Edit Profile")
+  .text("🚀 Apply").text("📧 Bulk Mail").text("👔 Roles").row()
+  .text("👤 Profile").text("📄 Resume").text("📝 Template").row()
+  .text("🔌 Test SMTP").text("⚙️ Setup").text("❓ Help")
+  .resized()
+  .persistent();
+
+// Single back-button keyboard shown while inside a page / flow
+const BACK_KEYBOARD = new Keyboard()
+  .text("⬅️ Back")
   .resized()
   .persistent();
 
@@ -112,20 +116,41 @@ async function main(): Promise<void> {
   });
 
   // ── Home ReplyKeyboard button handlers ────────────────────────────────────
-  bot.hears("🚀 Apply", (ctx) => ctx.conversation.enter("applyFlow"));
-  bot.hears("📧 Bulk Mail", (ctx) => ctx.conversation.enter("mailFlow"));
-  bot.hears("⚙️ SMTP Setup", (ctx) => ctx.conversation.enter("setupFlow"));
-  bot.hears("📝 Template", (ctx) => ctx.conversation.enter("templateFlow"));
+
+  // ⬅️ Back — always restore the home grid
+  bot.hears("⬅️ Back", async (ctx) => {
+    await ctx.reply("🏠 Main Menu", { reply_markup: HOME_KEYBOARD });
+  });
+
+  // ── Action flows: switch to Back keyboard first, then enter conversation ──
+  bot.hears("🚀 Apply", async (ctx) => {
+    await ctx.reply("🚀 Starting application flow…", { reply_markup: BACK_KEYBOARD });
+    await ctx.conversation.enter("applyFlow");
+  });
+  bot.hears("📧 Bulk Mail", async (ctx) => {
+    await ctx.reply("📧 Starting bulk mail flow…", { reply_markup: BACK_KEYBOARD });
+    await ctx.conversation.enter("mailFlow");
+  });
+  bot.hears("📝 Template", async (ctx) => {
+    await ctx.reply("📝 Starting template setup…", { reply_markup: BACK_KEYBOARD });
+    await ctx.conversation.enter("templateFlow");
+  });
+  bot.hears("⚙️ Setup", async (ctx) => {
+    await ctx.reply("⚙️ Starting SMTP setup…", { reply_markup: BACK_KEYBOARD });
+    await ctx.conversation.enter("setupFlow");
+  });
+
+  // ── View pages: show content + Back keyboard ──────────────────────────────
   bot.hears("👔 Roles", async (ctx) => {
     const roles = await getRoles(ctx.from!.id);
-    const keyboard = new InlineKeyboard();
+    const inlineKb = new InlineKeyboard();
     if (roles.length === 0) {
-      keyboard.text("➕ Add New Role", "add_new_role").row();
-      keyboard.text("❌ Close", "cancel_delete");
+      inlineKb.text("➕ Add New Role", "add_new_role");
       await ctx.reply(
-        "👔 *Job Roles*\n\nYou haven't created any roles yet.\n\nClick below or run /add\\_role to create your first role!",
-        { parse_mode: "Markdown", reply_markup: keyboard }
+        "👔 *Job Roles*\n\nYou haven't created any roles yet.\n\nTap below or use /add\\_role to create your first role!",
+        { parse_mode: "Markdown", reply_markup: BACK_KEYBOARD }
       );
+      await ctx.reply("What would you like to do?", { reply_markup: inlineKb });
       return;
     }
     let msg = "👔 *Your Job Roles & Resumes*\n\n";
@@ -134,20 +159,24 @@ async function main(): Promise<void> {
         ? `📄 Resume: \`${r.resume.fileName}\``
         : `⚠️ No resume attached`;
       msg += `${idx + 1}. *${escapeMarkdown(r.name)}*\n   ${resumeInfo}\n\n`;
-      keyboard.text(`🗑 Delete "${escapeMarkdown(r.name).slice(0, 18)}"`, `delete_role:${r.id}`).row();
+      inlineKb.text(`🗑 Delete "${escapeMarkdown(r.name).slice(0, 18)}"`, `delete_role:${r.id}`).row();
     });
-    keyboard.text("➕ Add New Role", "add_new_role").row();
-    keyboard.text("❌ Close", "cancel_delete");
-    await ctx.reply(msg, { parse_mode: "Markdown", reply_markup: keyboard });
+    inlineKb.text("➕ Add New Role", "add_new_role");
+    await ctx.reply(msg, { parse_mode: "Markdown", reply_markup: BACK_KEYBOARD });
+    await ctx.reply("Manage your roles:", { reply_markup: inlineKb });
   });
+
   bot.hears("👤 Profile", async (ctx) => {
     const user = await getUser(ctx.from!.id);
-    if (!user) { await ctx.reply("No profile found. Send any message to get started."); return; }
+    if (!user) {
+      await ctx.reply("No profile found. Send any message to get started.", { reply_markup: BACK_KEYBOARD });
+      return;
+    }
     const lines: string[] = ["👤 *Your Account Profile*\n"];
     if (user.smtp) {
       lines.push(`📤 *Email:* \`${user.smtp.user}\`\n🌐 *SMTP:* \`${user.smtp.host}:${user.smtp.port}\`\n👤 *From name:* ${escapeMarkdown(user.smtp.senderName ?? "—")}`);
     } else {
-      lines.push("📤 *Email:* ❌ Not configured — tap ⚙️ SMTP Setup");
+      lines.push("📤 *Email:* ❌ Not configured — tap ⚙️ Setup");
     }
     lines.push("");
     const roles = user.roles ?? [];
@@ -160,7 +189,7 @@ async function main(): Promise<void> {
     if (user.profile?.officialName || user.profile?.totalExperience) {
       lines.push(`👤 *Screening Profile:* ✅ Configured\n• Name: ${escapeMarkdown(user.profile.officialName || "—")}\n• Exp: ${escapeMarkdown(user.profile.totalExperience || "—")} | Notice: ${escapeMarkdown(user.profile.noticePeriod || "—")}\n_/candidate\\_profile for full details_`);
     } else {
-      lines.push("👤 *Screening Profile:* ❌ Not setup — tap ✏️ Edit Profile");
+      lines.push("👤 *Screening Profile:* ❌ Not setup");
     }
     lines.push("");
     if (user.resume) {
@@ -170,30 +199,56 @@ async function main(): Promise<void> {
     if (user.templates.default) {
       lines.push(`📝 *Template:* ✅\n_${escapeMarkdown(user.templates.default.slice(0, 100))}${user.templates.default.length > 100 ? "…" : ""}_`);
     } else {
-      lines.push("📝 *Template:* ❌ Not set — tap 📝 Template");
+      lines.push("📝 *Template:* ❌ Not set");
     }
-    const profileKeyboard = user.smtp
-      ? new InlineKeyboard().text("🔌 Test SMTP", "test_smtp")
-      : undefined;
-    await ctx.reply(lines.join("\n"), {
-      parse_mode: "Markdown",
-      ...(profileKeyboard ? { reply_markup: profileKeyboard } : {}),
-    });
+    // Build inline action buttons: Edit Profile first, then Test SMTP
+    const profileInlineKb = new InlineKeyboard()
+      .text("✏️ Edit Profile", "edit_profile_btn")
+      .row();
+    if (user.smtp) {
+      profileInlineKb.text("🔌 Test SMTP", "test_smtp");
+    }
+    await ctx.reply(lines.join("\n"), { parse_mode: "Markdown", reply_markup: BACK_KEYBOARD });
+    await ctx.reply("What would you like to do?", { reply_markup: profileInlineKb });
   });
+
   bot.hears("📄 Resume", async (ctx) => {
     const user = await getUser(ctx.from!.id);
     if (!user?.resume) {
-      await ctx.reply("📄 No resume saved yet.\n\nSend a PDF file to upload your resume.");
+      await ctx.reply("📄 No resume saved yet.\n\nSend a PDF file to upload your resume.", { reply_markup: BACK_KEYBOARD });
       return;
     }
-    const keyboard = new InlineKeyboard()
-      .text("🗑 Delete Resume", "confirm_delete_resume")
-      .text("❌ Close", "cancel_delete");
+    const inlineKb = new InlineKeyboard()
+      .text("🗑 Delete Resume", "confirm_delete_resume");
     await ctx.reply(
       `📄 *Saved Resume*\n\n*File:* \`${user.resume.fileName}\`\n*Uploaded:* ${user.resume.uploadedAt.toLocaleDateString()}\n*Size:* ~${user.resume.text.split(/\s+/).length} words extracted\n\nSend a new PDF at any time to replace it.`,
-      { parse_mode: "Markdown", reply_markup: keyboard }
+      { parse_mode: "Markdown", reply_markup: BACK_KEYBOARD }
     );
+    await ctx.reply("Manage your resume:", { reply_markup: inlineKb });
   });
+
+  bot.hears("🔌 Test SMTP", async (ctx) => {
+    const user = await getUser(ctx.from!.id);
+    if (!user?.smtp) {
+      await ctx.reply("ℹ️ No SMTP configuration found.\n\nTap ⚙️ Setup to configure your email account.", { reply_markup: BACK_KEYBOARD });
+      return;
+    }
+    await ctx.reply("🔌 Testing your SMTP connection…", { reply_markup: BACK_KEYBOARD });
+    try {
+      await verifySmtp(user.smtp);
+      await ctx.reply(
+        `✅ *SMTP connection verified successfully!*\n\n📤 From: \`${user.smtp.user}\`\n🌐 Host: \`${user.smtp.host}:${user.smtp.port}\``,
+        { parse_mode: "Markdown" }
+      );
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Unknown error";
+      await ctx.reply(
+        `❌ *SMTP connection failed*\n\n\`${message}\`\n\nTap ⚙️ Setup to update your credentials.`,
+        { parse_mode: "Markdown" }
+      );
+    }
+  });
+
   bot.hears("❓ Help", async (ctx) => {
     await ctx.reply(
       `📖 *Commands*\n\n` +
@@ -220,31 +275,9 @@ async function main(): Promise<void> {
         `/resume — View default resume info\n` +
         `/reset — Delete all your data (irreversible)\n` +
         `/cancel — Stop the current action`,
-      { parse_mode: "Markdown" }
+      { parse_mode: "Markdown", reply_markup: BACK_KEYBOARD }
     );
   });
-  bot.hears("🔌 Test SMTP", async (ctx) => {
-    const user = await getUser(ctx.from!.id);
-    if (!user?.smtp) {
-      await ctx.reply("ℹ️ No SMTP configuration found. Tap ⚙️ SMTP Setup to configure.");
-      return;
-    }
-    await ctx.reply("🔌 Testing your SMTP connection...");
-    try {
-      await verifySmtp(user.smtp);
-      await ctx.reply(
-        `✅ *SMTP connection verified successfully!*\n\n📤 From: \`${user.smtp.user}\`\n🌐 Host: \`${user.smtp.host}:${user.smtp.port}\``,
-        { parse_mode: "Markdown" }
-      );
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "Unknown error";
-      await ctx.reply(
-        `❌ *SMTP connection failed*\n\n\`${message}\`\n\nTap ⚙️ SMTP Setup to update your credentials.`,
-        { parse_mode: "Markdown" }
-      );
-    }
-  });
-  bot.hears("✏️ Edit Profile", (ctx) => ctx.conversation.enter("profileFlow"));
 
   // ── /ping ──────────────────────────────────────────────────────────────────
   bot.command("ping", async (ctx) => {
@@ -301,7 +334,7 @@ async function main(): Promise<void> {
           `👤 *From name:* ${fromName}`
       );
     } else {
-      lines.push("📤 *Email:* ❌ Not configured — /setup");
+      lines.push("📤 *Email:* ❌ Not configured — tap ⚙️ Setup");
     }
 
     lines.push("");
