@@ -1,6 +1,7 @@
 import type { BotContext, MyConversation } from "../types.js";
 import { addRole, attachResumeToRole } from "../services/user.js";
 import { escapeMarkdown } from "../services/format.js";
+import { handleBack, HOME_KEYBOARD } from "../nav.js";
 
 /**
  * Conversation: Create Role Flow
@@ -32,9 +33,10 @@ export async function addRoleFlow(
   const roleName = nameCtx.message.text.trim();
 
   if (roleName === "/cancel") {
-    await ctx.reply("❌ Cancelled role creation.");
+    await ctx.reply("❌ Cancelled role creation.", { reply_markup: HOME_KEYBOARD });
     return;
   }
+  if (await handleBack(roleName, ctx)) return;
 
   if (roleName.length < 2) {
     await ctx.reply("⚠️ Role name is too short. Please try /add\\_role again.");
@@ -53,7 +55,8 @@ export async function addRoleFlow(
   );
   const relExpCtx = await conversation.waitFor("message:text");
   const relExpText = relExpCtx.message.text.trim();
-  if (relExpText === "/cancel") { await ctx.reply("❌ Cancelled role creation."); return; }
+  if (relExpText === "/cancel") { await ctx.reply("❌ Cancelled role creation.", { reply_markup: HOME_KEYBOARD }); return; }
+  if (await handleBack(relExpText, ctx)) return;
   const relevantExperience = relExpText === "/skip" ? undefined : relExpText;
 
   // Step 3: Expected CTC for this role
@@ -67,7 +70,8 @@ export async function addRoleFlow(
 
   const expCtcCtx = await conversation.waitFor("message:text");
   const expCtcText = expCtcCtx.message.text.trim();
-  if (expCtcText === "/cancel") { await ctx.reply("❌ Cancelled role creation."); return; }
+  if (expCtcText === "/cancel") { await ctx.reply("❌ Cancelled role creation.", { reply_markup: HOME_KEYBOARD }); return; }
+  if (await handleBack(expCtcText, ctx)) return;
   const expectedCtc = expCtcText === "/skip" ? undefined : expCtcText;
 
   // Step 4: Holding offer for this role
@@ -80,7 +84,8 @@ export async function addRoleFlow(
   );
   const offerCtx = await conversation.waitFor("message:text");
   const offerText = offerCtx.message.text.trim();
-  if (offerText === "/cancel") { await ctx.reply("❌ Cancelled role creation."); return; }
+  if (offerText === "/cancel") { await ctx.reply("❌ Cancelled role creation.", { reply_markup: HOME_KEYBOARD }); return; }
+  if (await handleBack(offerText, ctx)) return;
   const holdingOffer = offerText === "/skip" ? undefined : offerText;
 
   const newRole = await conversation.external(() =>
@@ -113,7 +118,7 @@ export async function addRoleFlow(
         `📄 *Holding Offer:* ${safeOffer}\n` +
         `📎 *Attached Resume:* \`${resume.fileName}\`\n\n` +
         `You can now use /mail to apply for jobs targeting this role!`,
-      { parse_mode: "Markdown" }
+      { parse_mode: "Markdown", reply_markup: HOME_KEYBOARD },
     );
     return;
   }
@@ -130,7 +135,7 @@ export async function addRoleFlow(
       `📄 *Holding Offer:* ${safeOffer}\n` +
       `📄 *Resume:* Not attached yet\n\n` +
       `Send a PDF resume file to attach a tailored resume to this role, or run /roles to manage all roles.`,
-    { parse_mode: "Markdown" }
+    { parse_mode: "Markdown", reply_markup: HOME_KEYBOARD },
   );
 
 }

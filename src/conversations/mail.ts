@@ -6,6 +6,7 @@ import { sendApplicationEmail } from "../services/mailer.js";
 import type { UserResume, UserRole } from "../models/User.js";
 import { escapeMarkdown, htmlToTelegramMarkdown } from "../services/format.js";
 import { extractUrl, fetchJobPage } from "../services/scraper.js";
+import { handleBack, HOME_KEYBOARD } from "../nav.js";
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -41,6 +42,7 @@ export async function mailFlow(
     await ctx.reply(
       "⚠️ You haven't configured your email yet.\n\n" +
         "Run /setup to connect your SMTP account first.",
+      { reply_markup: HOME_KEYBOARD },
     );
     return;
   }
@@ -125,9 +127,10 @@ export async function mailFlow(
     const input = emailCtx.message.text.trim();
 
     if (input === "/cancel") {
-      await ctx.reply("❌ Cancelled.");
+      await ctx.reply("❌ Cancelled.", { reply_markup: HOME_KEYBOARD });
       return;
     }
+    if (await handleBack(input, ctx)) return;
 
     const urlInInput = extractUrl(input);
     if (urlInInput) {
@@ -197,7 +200,7 @@ export async function mailFlow(
       "📄 *No Resumes Found!*\n\n" +
         "You need to upload a resume and attach it to a role first.\n" +
         "Use /roles to create a role and upload a PDF resume.",
-      { parse_mode: "Markdown" },
+      { parse_mode: "Markdown", reply_markup: HOME_KEYBOARD },
     );
     return;
   }
@@ -229,12 +232,27 @@ export async function mailFlow(
     { parse_mode: "Markdown", reply_markup: roleKeyboard },
   );
 
-  const roleCallback = await conversation.waitFor("callback_query:data");
-  const roleData = roleCallback.callbackQuery.data;
-  await roleCallback.answerCallbackQuery();
+  const roleCallback = await conversation.waitFor([
+    "callback_query:data",
+    "message:text",
+  ]);
+
+  if (roleCallback.message?.text) {
+    const text = roleCallback.message.text.trim();
+    if (text === "/cancel") {
+      await ctx.reply("❌ Application cancelled.", { reply_markup: HOME_KEYBOARD });
+      return;
+    }
+    if (await handleBack(text, ctx)) return;
+  }
+
+  const roleData = roleCallback.callbackQuery?.data;
+  if (roleCallback.callbackQuery) {
+    await roleCallback.answerCallbackQuery();
+  }
 
   if (roleData === "mail_cancel") {
-    await ctx.reply("❌ Application cancelled.");
+    await ctx.reply("❌ Application cancelled.", { reply_markup: HOME_KEYBOARD });
     return;
   }
 
@@ -245,7 +263,7 @@ export async function mailFlow(
   if (roleData === "mail_role:default") {
     selectedRoleName = "Default Profile";
     selectedResume = user.resume;
-  } else if (roleData.startsWith("mail_role:")) {
+  } else if (roleData?.startsWith("mail_role:")) {
     const roleId = roleData.replace("mail_role:", "");
     const found = rolesWithResume.find((r) => r.id === roleId);
     if (found && found.resume) {
@@ -258,6 +276,7 @@ export async function mailFlow(
   if (!selectedResume) {
     await ctx.reply(
       "❌ Could not load resume for the selected role. Please try again.",
+      { reply_markup: HOME_KEYBOARD },
     );
     return;
   }
@@ -287,9 +306,10 @@ export async function mailFlow(
   const jdInput = jdCtx.message.text.trim();
 
   if (jdInput === "/cancel") {
-    await ctx.reply("❌ Application cancelled.");
+    await ctx.reply("❌ Application cancelled.", { reply_markup: HOME_KEYBOARD });
     return;
   }
+  if (await handleBack(jdInput, ctx)) return;
 
   if (jdInput !== "/skip") {
     const jdUrl = extractUrl(jdInput);
@@ -348,6 +368,7 @@ export async function mailFlow(
     const msg = err instanceof Error ? err.message : "Unknown error";
     await ctx.reply(
       `❌ AI generation failed: ${msg}\n\nPlease try /mail again.`,
+      { reply_markup: HOME_KEYBOARD },
     );
     return;
   }
@@ -395,12 +416,27 @@ export async function mailFlow(
   });
 
   // ── Step 7: Confirmation & Batch Send ─────────────────────────────────────
-  const confirmCb = await conversation.waitFor("callback_query:data");
-  const action = confirmCb.callbackQuery.data;
-  await confirmCb.answerCallbackQuery();
+  const confirmCb = await conversation.waitFor([
+    "callback_query:data",
+    "message:text",
+  ]);
+
+  if (confirmCb.message?.text) {
+    const text = confirmCb.message.text.trim();
+    if (text === "/cancel") {
+      await ctx.reply("❌ Application cancelled. No emails were sent.", { reply_markup: HOME_KEYBOARD });
+      return;
+    }
+    if (await handleBack(text, ctx)) return;
+  }
+
+  const action = confirmCb.callbackQuery?.data;
+  if (confirmCb.callbackQuery) {
+    await confirmCb.answerCallbackQuery();
+  }
 
   if (action !== "mail_confirm_send") {
-    await ctx.reply("❌ Application cancelled. No emails were sent.");
+    await ctx.reply("❌ Application cancelled. No emails were sent.", { reply_markup: HOME_KEYBOARD });
     return;
   }
 
@@ -452,5 +488,5 @@ export async function mailFlow(
       failures.map((f) => `• \`${f.email}\`: \`${f.error}\``).join("\n");
   }
 
-  await ctx.reply(summary, { parse_mode: "Markdown" });
+  await ctx.reply(summary, { parse_mode: "Markdown", reply_markup: HOME_KEYBOARD });
 }

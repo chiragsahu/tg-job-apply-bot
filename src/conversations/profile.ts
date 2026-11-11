@@ -2,6 +2,7 @@ import type { BotContext, MyConversation } from "../types.js";
 import { getCandidateProfile, updateCandidateProfile } from "../services/user.js";
 import type { CandidateProfile } from "../models/User.js";
 import { escapeMarkdown } from "../services/format.js";
+import { handleBack, HOME_KEYBOARD } from "../nav.js";
 
 /**
  * Conversation: Candidate Profile Setup & Update Flow
@@ -45,6 +46,12 @@ export async function profileFlow(
 
     if (text === "/cancel") {
       throw new Error("CANCELLED");
+    }
+
+    // ⬅️ Back — restore home menu and abort profile flow
+    if (text === "⬅️ Back") {
+      await ctx.reply("🏠 Main Menu", { reply_markup: HOME_KEYBOARD });
+      throw new Error("BACK");
     }
 
     if (text === "/skip") {
@@ -145,14 +152,17 @@ export async function profileFlow(
         `⏳ *Notice Period:* ${escapeMarkdown(noticePeriod || "—")}\n\n` +
         "_💡 Note: Role-specific details (Relevant Experience, Expected CTC, Holding Offer) are configured per role under /roles._\n\n" +
         "You can view your profile with /candidate\\_profile or edit with /edit\\_profile.",
-      { parse_mode: "Markdown" }
+      { parse_mode: "Markdown", reply_markup: HOME_KEYBOARD }
     );
   } catch (err) {
-    if (err instanceof Error && err.message === "CANCELLED") {
-      await ctx.reply("❌ Profile setup cancelled. No changes were made.");
+    if (err instanceof Error && (err.message === "CANCELLED" || err.message === "BACK")) {
+      if (err.message === "CANCELLED") {
+        await ctx.reply("❌ Profile setup cancelled. No changes were made.", { reply_markup: HOME_KEYBOARD });
+      }
+      // BACK already sent HOME_KEYBOARD inside promptField
     } else {
       const msg = err instanceof Error ? err.message : "Unknown error";
-      await ctx.reply(`⚠️ Profile setup encountered an error: ${msg}`);
+      await ctx.reply(`⚠️ Profile setup encountered an error: ${msg}`, { reply_markup: HOME_KEYBOARD });
     }
   }
 }

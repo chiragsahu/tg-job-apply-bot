@@ -6,6 +6,7 @@ import { getSmtp, updateSmtp, updateSmtpField } from "../services/user.js";
 import { escapeMarkdown } from "../services/format.js";
 import { verifySmtp } from "../services/mailer.js";
 import nodemailer from "nodemailer";
+import { handleBack, HOME_KEYBOARD } from "../nav.js";
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const PORT_OPTIONS = [
@@ -102,9 +103,11 @@ export async function setupFlow(
       const editText = updateCtx.message?.text?.trim() ?? "";
 
       if (editText === "/cancel") {
-        await ctx.reply("❌ Setup cancelled.");
+        await ctx.reply("❌ Setup cancelled.", { reply_markup: HOME_KEYBOARD });
         return;
       }
+
+      if (await handleBack(editText, ctx)) return;
 
       if (editText === "/continue") {
         break;
@@ -205,9 +208,10 @@ export async function setupFlow(
   const hostCtx = await conversation.waitFor("message:text");
   const host = hostCtx.message.text.trim().toLowerCase();
   if (host === "/cancel") {
-    await ctx.reply("❌ Setup cancelled.");
+    await ctx.reply("❌ Setup cancelled.", { reply_markup: HOME_KEYBOARD });
     return;
   }
+  if (await handleBack(host, ctx)) return;
 
   // Step 2: SMTP Port — InlineKeyboard
   const portKeyboard = new InlineKeyboard()
@@ -254,9 +258,10 @@ export async function setupFlow(
 
     const portInput = portCtx.message?.text?.trim() ?? "";
     if (portInput === "/cancel") {
-      await ctx.reply("❌ Setup cancelled.");
+      await ctx.reply("❌ Setup cancelled.", { reply_markup: HOME_KEYBOARD });
       return;
     }
+    if (await handleBack(portInput, ctx)) return;
 
     const portNum = parseInt(portInput, 10);
     if (!isNaN(portNum) && portNum > 0 && portNum <= 65535) {
@@ -277,9 +282,10 @@ export async function setupFlow(
     const emailCtx = await conversation.waitFor("message:text");
     const input = emailCtx.message.text.trim();
     if (input === "/cancel") {
-      await ctx.reply("❌ Setup cancelled.");
+      await ctx.reply("❌ Setup cancelled.", { reply_markup: HOME_KEYBOARD });
       return;
     }
+    if (await handleBack(input, ctx)) return;
     if (!EMAIL_REGEX.test(input)) {
       await ctx.reply(
         "⚠️ That doesn't look like a valid email address. Please try again:",
@@ -301,9 +307,10 @@ export async function setupFlow(
   const passCtx = await conversation.waitFor("message:text");
   const rawPassword = passCtx.message.text.trim();
   if (rawPassword === "/cancel") {
-    await ctx.reply("❌ Setup cancelled.");
+    await ctx.reply("❌ Setup cancelled.", { reply_markup: HOME_KEYBOARD });
     return;
   }
+  if (await handleBack(rawPassword, ctx)) return;
 
   // Clean password: strip all spaces (Google App Passwords are 16 letters often pasted with spaces like "abcd efgh ijkl mnop")
   const cleanPassword = rawPassword.replace(/\s+/g, "");
@@ -321,11 +328,13 @@ export async function setupFlow(
   );
 
   const nameCtx = await conversation.waitFor("message:text");
-  const senderName = nameCtx.message.text.trim() || emailAddress;
-  if (senderName === "/cancel") {
-    await ctx.reply("❌ Setup cancelled.");
+  const rawName = nameCtx.message.text.trim();
+  if (rawName === "/cancel") {
+    await ctx.reply("❌ Setup cancelled.", { reply_markup: HOME_KEYBOARD });
     return;
   }
+  if (await handleBack(rawName, ctx)) return;
+  const senderName = rawName || emailAddress;
 
   // Test the connection
   await ctx.reply("🔌 Testing your SMTP connection...");
@@ -356,14 +365,14 @@ export async function setupFlow(
         `📤 From: *${safeSenderName}* \`<${emailAddress}>\`\n` +
         `🌐 Host: \`${host}:${port}\`\n\n` +
         `You're ready to send applications. Use /mail or /apply to get started!`,
-      { parse_mode: "Markdown" },
+      { parse_mode: "Markdown", reply_markup: HOME_KEYBOARD },
     );
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
     await ctx.reply(
       `❌ *SMTP connection failed*\n\n\`${message}\`\n\n` +
         "Please check your email and App Password, then run /setup again.",
-      { parse_mode: "Markdown" },
+      { parse_mode: "Markdown", reply_markup: HOME_KEYBOARD },
     );
   }
 }

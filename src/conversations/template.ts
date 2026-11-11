@@ -1,6 +1,7 @@
 import type { BotContext, MyConversation } from "../types.js";
 import { getUser, updateTemplate } from "../services/user.js";
 import { escapeMarkdown } from "../services/format.js";
+import { handleBack, HOME_KEYBOARD } from "../nav.js";
 
 /**
  * Conversation: Template / Tone Manager
@@ -44,13 +45,15 @@ export async function templateFlow(
   const input = templateCtx.message.text.trim();
 
   if (input === "/cancel") {
-    await ctx.reply("❌ No changes made.");
+    await ctx.reply("❌ No changes made.", { reply_markup: HOME_KEYBOARD });
     return;
   }
+  if (await handleBack(input, ctx)) return;
 
   if (input.length < 10) {
     await ctx.reply(
-      "⚠️ Template is too short. Please write at least a sentence describing your tone and key points."
+      "⚠️ Template is too short. Please write at least a sentence describing your tone and key points.",
+      { reply_markup: HOME_KEYBOARD },
     );
     return;
   }
@@ -65,6 +68,6 @@ export async function templateFlow(
     "✅ *Template saved!*\n\n" +
       "Your tone notes will be used in all future /apply calls.\n\n" +
       `_Preview:_\n${safePreview}`,
-    { parse_mode: "Markdown" }
+    { parse_mode: "Markdown", reply_markup: HOME_KEYBOARD },
   );
 }

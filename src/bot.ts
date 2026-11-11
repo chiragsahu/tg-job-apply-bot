@@ -1,5 +1,5 @@
 import "dotenv/config";
-import { Bot, InlineKeyboard, Keyboard, session } from "grammy";
+import { Bot, InlineKeyboard, session } from "grammy";
 import {
   conversations,
   createConversation,
@@ -39,6 +39,7 @@ import { mailFlow } from "./conversations/mail.js";
 import { addRoleFlow } from "./conversations/role.js";
 
 import type { BotContext, MyContext, SessionData } from "./types.js";
+import { HOME_KEYBOARD, BACK_KEYBOARD, BACK_TEXT } from "./nav.js";
 
 // ── Validate required env vars at startup ──────────────────────────────────
 const BOT_TOKEN = process.env["TELEGRAM_BOT_TOKEN"];
@@ -46,20 +47,6 @@ if (!BOT_TOKEN) throw new Error("TELEGRAM_BOT_TOKEN is not set in .env");
 if (!process.env["MONGODB_URI"]) throw new Error("MONGODB_URI is not set in .env");
 if (!process.env["ENCRYPTION_KEY"]) throw new Error("ENCRYPTION_KEY is not set in .env");
 if (!process.env["OPEN_AI_KEY"]) throw new Error("OPEN_AI_KEY is not set in .env");
-
-// ── Home ReplyKeyboard (3×3 grid) ──────────────────────────────────────────
-const HOME_KEYBOARD = new Keyboard()
-  .text("🚀 Apply").text("📧 Bulk Mail").text("👔 Roles").row()
-  .text("👤 Profile").text("📄 Resume").text("📝 Template").row()
-  .text("🔌 Test SMTP").text("⚙️ Setup").text("❓ Help")
-  .resized()
-  .persistent();
-
-// Single back-button keyboard shown while inside a page / flow
-const BACK_KEYBOARD = new Keyboard()
-  .text("⬅️ Back")
-  .resized()
-  .persistent();
 
 // ── Bot initialisation ─────────────────────────────────────────────────────
 const bot = new Bot<MyContext>(BOT_TOKEN);
@@ -447,6 +434,7 @@ async function main(): Promise<void> {
   });
 
   bot.command("edit_profile", async (ctx) => {
+    await ctx.reply("✏️ Editing screening profile…", { reply_markup: BACK_KEYBOARD });
     await ctx.conversation.enter("profileFlow");
   });
 
@@ -500,9 +488,10 @@ async function main(): Promise<void> {
       const role = await addRole(ctx.from!.id, name);
       await ctx.reply(
         `✅ *Role Created!*\n\n👔 *Role:* ${escapeMarkdown(role.name)}\n\nSend a PDF resume file to attach to this role!`,
-        { parse_mode: "Markdown" }
+        { parse_mode: "Markdown", reply_markup: HOME_KEYBOARD }
       );
     } else {
+      await ctx.reply("👔 Creating a new role…", { reply_markup: BACK_KEYBOARD });
       await ctx.conversation.enter("addRoleFlow");
     }
   });
@@ -510,10 +499,12 @@ async function main(): Promise<void> {
   // ── /mail & /apply Commands ────────────────────────────────────────────────
 
   bot.command("mail", async (ctx) => {
+    await ctx.reply("📧 Starting bulk mail flow…", { reply_markup: BACK_KEYBOARD });
     await ctx.conversation.enter("mailFlow");
   });
 
   bot.command("apply", async (ctx) => {
+    await ctx.reply("🚀 Starting application flow…", { reply_markup: BACK_KEYBOARD });
     await ctx.conversation.enter("applyFlow");
   });
 
@@ -521,6 +512,7 @@ async function main(): Promise<void> {
   // ── SMTP Commands ──────────────────────────────────────────────────────────
 
   bot.command("setup", async (ctx) => {
+    await ctx.reply("⚙️ Starting SMTP setup…", { reply_markup: BACK_KEYBOARD });
     await ctx.conversation.enter("setupFlow");
   });
 
@@ -622,6 +614,7 @@ async function main(): Promise<void> {
   // ── Template Commands ──────────────────────────────────────────────────────
 
   bot.command("set_template", async (ctx) => {
+    await ctx.reply("📝 Setting up template…", { reply_markup: BACK_KEYBOARD });
     await ctx.conversation.enter("templateFlow");
   });
 
@@ -685,7 +678,8 @@ async function main(): Promise<void> {
 
   bot.command("cancel", async (ctx) => {
     await ctx.reply(
-      "✅ Action cancelled. Use /help to see available commands."
+      "✅ Action cancelled. Use /help to see available commands.",
+      { reply_markup: HOME_KEYBOARD }
     );
   });
 
@@ -749,6 +743,7 @@ async function main(): Promise<void> {
   bot.callbackQuery("edit_template", async (ctx) => {
     await ctx.answerCallbackQuery();
     await ctx.editMessageReplyMarkup({ reply_markup: new InlineKeyboard() });
+    await ctx.reply("📝 Setting up template…", { reply_markup: BACK_KEYBOARD });
     await ctx.conversation.enter("templateFlow");
   });
 
@@ -768,11 +763,13 @@ async function main(): Promise<void> {
 
   bot.callbackQuery("add_new_role", async (ctx) => {
     await ctx.answerCallbackQuery();
+    await ctx.reply("👔 Creating a new role…", { reply_markup: BACK_KEYBOARD });
     await ctx.conversation.enter("addRoleFlow");
   });
 
   bot.callbackQuery("edit_profile_btn", async (ctx) => {
     await ctx.answerCallbackQuery();
+    await ctx.reply("✏️ Editing screening profile…", { reply_markup: BACK_KEYBOARD });
     await ctx.conversation.enter("profileFlow");
   });
 
@@ -826,6 +823,7 @@ async function main(): Promise<void> {
   bot.callbackQuery("attach_create_role", async (ctx) => {
     await ctx.answerCallbackQuery();
     await ctx.editMessageReplyMarkup({ reply_markup: new InlineKeyboard() });
+    await ctx.reply("👔 Creating a new role…", { reply_markup: BACK_KEYBOARD });
     await ctx.conversation.enter("addRoleFlow");
   });
 

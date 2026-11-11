@@ -14,6 +14,7 @@ import { tailorApplication } from "../services/ai.js";
 import { sendApplicationEmail } from "../services/mailer.js";
 import { escapeMarkdown, htmlToTelegramMarkdown } from "../services/format.js";
 import { extractUrl, fetchJobPage } from "../services/scraper.js";
+import { handleBack, HOME_KEYBOARD } from "../nav.js";
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -46,6 +47,7 @@ export async function applyFlow(
     await ctx.reply(
       "⚠️ You haven't configured your email yet.\n\n" +
         "Run /setup to connect your SMTP account first.",
+      { reply_markup: HOME_KEYBOARD },
     );
     return;
   }
@@ -53,16 +55,32 @@ export async function applyFlow(
   if (!user.resume) {
     await ctx.reply(
       "📄 No resume found.\n\n" +
-        "Please upload your resume PDF now, or use /resume to manage it.",
+        "Please upload your resume PDF now, or use /resume to manage it.\n\n" +
+        "_Send /cancel or tap ⬅️ Back to return._",
     );
 
-    // Wait for PDF upload
-    const docCtx = await conversation.waitFor("message:document");
-    const doc = docCtx.message.document;
+    // Wait for PDF upload or cancellation
+    const docCtx = await conversation.waitFor(["message:document", "message:text"]);
+    if (docCtx.message?.text) {
+      const text = docCtx.message.text.trim();
+      if (text === "/cancel") {
+        await ctx.reply("❌ Cancelled.", { reply_markup: HOME_KEYBOARD });
+        return;
+      }
+      if (await handleBack(text, ctx)) return;
+      await ctx.reply("⚠️ Expected a PDF resume document.", { reply_markup: HOME_KEYBOARD });
+      return;
+    }
+
+    const doc = docCtx.message?.document;
+    if (!doc) {
+      await ctx.reply("⚠️ No document received.", { reply_markup: HOME_KEYBOARD });
+      return;
+    }
 
     const validation = validateResumeDocument(doc);
     if (!validation.valid) {
-      await ctx.reply(validation.error!);
+      await ctx.reply(validation.error!, { reply_markup: HOME_KEYBOARD });
       return;
     }
 
@@ -153,9 +171,10 @@ export async function applyFlow(
     const jdCtx = await conversation.waitFor("message:text");
     const jdInput = jdCtx.message.text.trim();
     if (jdInput === "/cancel") {
-      await ctx.reply("❌ Cancelled.");
+      await ctx.reply("❌ Cancelled.", { reply_markup: HOME_KEYBOARD });
       return;
     }
+    if (await handleBack(jdInput, ctx)) return;
     if (jdInput !== "/skip") {
       const url = extractUrl(jdInput);
       if (url) {
@@ -185,9 +204,10 @@ export async function applyFlow(
     const jdCtx = await conversation.waitFor("message:text");
     const jdInput = jdCtx.message.text.trim();
     if (jdInput === "/cancel") {
-      await ctx.reply("❌ Cancelled.");
+      await ctx.reply("❌ Cancelled.", { reply_markup: HOME_KEYBOARD });
       return;
     }
+    if (await handleBack(jdInput, ctx)) return;
 
     const url = extractUrl(jdInput);
     if (url) {
@@ -238,9 +258,10 @@ export async function applyFlow(
     const emailCtx = await conversation.waitFor("message:text");
     const input = emailCtx.message.text.trim();
     if (input === "/cancel") {
-      await ctx.reply("❌ Cancelled.");
+      await ctx.reply("❌ Cancelled.", { reply_markup: HOME_KEYBOARD });
       return;
     }
+    if (await handleBack(input, ctx)) return;
     if (input === "/skip" && detectedEmails.length > 0) {
       recipientEmail = detectedEmails[0]!;
       break;
@@ -300,6 +321,7 @@ export async function applyFlow(
     const msg = err instanceof Error ? err.message : "Unknown error";
     await ctx.reply(
       `❌ AI generation failed: ${msg}\n\nPlease try /apply again.`,
+      { reply_markup: HOME_KEYBOARD },
     );
     return;
   }
@@ -336,19 +358,34 @@ export async function applyFlow(
   });
 
   // ── Step 6: Confirm / Cancel / Regenerate ───────────────────────────────
-  const callbackCtx = await conversation.waitFor("callback_query:data");
-  const action = callbackCtx.callbackQuery.data;
+  const step6Ctx = await conversation.waitFor([
+    "callback_query:data",
+    "message:text",
+  ]);
 
-  await callbackCtx.answerCallbackQuery();
+  if (step6Ctx.message?.text) {
+    const text = step6Ctx.message.text.trim();
+    if (text === "/cancel") {
+      await ctx.reply("❌ Application cancelled.", { reply_markup: HOME_KEYBOARD });
+      return;
+    }
+    if (await handleBack(text, ctx)) return;
+  }
+
+  const action = step6Ctx.callbackQuery?.data;
+  if (step6Ctx.callbackQuery) {
+    await step6Ctx.answerCallbackQuery();
+  }
 
   if (action === "cancel_send") {
-    await ctx.reply("❌ Application cancelled. Run /apply to start again.");
+    await ctx.reply("❌ Application cancelled.", { reply_markup: HOME_KEYBOARD });
     return;
   }
 
   if (action === "regenerate") {
     await ctx.reply(
       "🔄 Regenerating... please run /apply again to restart the flow.",
+      { reply_markup: HOME_KEYBOARD },
     );
     return;
   }
@@ -380,14 +417,14 @@ export async function applyFlow(
           `📌 Subject: ${safeSubject}\n` +
           `📎 Attached: \`${resume.fileName}\`\n\n` +
           `_Message ID: \`${result.messageId}\`_`,
-        { parse_mode: "Markdown" },
+        { parse_mode: "Markdown", reply_markup: HOME_KEYBOARD },
       );
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Unknown error";
       await ctx.reply(
         `❌ *Failed to send email*\n\n\`${msg}\`\n\n` +
           "Check your SMTP settings with /setup and try again.",
-        { parse_mode: "Markdown" },
+        { parse_mode: "Markdown", reply_markup: HOME_KEYBOARD },
       );
     }
   }
