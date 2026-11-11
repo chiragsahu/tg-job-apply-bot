@@ -9,9 +9,16 @@ export const BACK_TEXT = "⬅️ Back";
 
 /** Persistent 3×3 home grid shown at the start / after Back is pressed. */
 export const HOME_KEYBOARD = new Keyboard()
-  .text("🚀 Apply").text("📧 Bulk Mail").text("👔 Roles").row()
-  .text("👤 Profile").text("📄 Resume").text("📝 Template").row()
-  .text("🔌 Test SMTP").text("⚙️ Setup").text("❓ Help")
+  .text("🚀 Apply")
+  .text("📧 Bulk Mail")
+  .text("👔 Roles")
+  .row()
+  .text("👤 Profile")
+  .text("📄 Resume")
+  .text("📝 Template")
+  .row()
+  .text("⚙️ Setup")
+  .text("❓ Help")
   .resized()
   .persistent();
 
@@ -44,4 +51,3 @@ export async function handleBack(
   }
   return false;
 }
-
