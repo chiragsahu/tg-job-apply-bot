@@ -1,5 +1,5 @@
 import "dotenv/config";
-import { Bot, InlineKeyboard, session } from "grammy";
+import { Bot, InlineKeyboard, Keyboard, session } from "grammy";
 import {
   conversations,
   createConversation,
@@ -46,6 +46,16 @@ if (!BOT_TOKEN) throw new Error("TELEGRAM_BOT_TOKEN is not set in .env");
 if (!process.env["MONGODB_URI"]) throw new Error("MONGODB_URI is not set in .env");
 if (!process.env["ENCRYPTION_KEY"]) throw new Error("ENCRYPTION_KEY is not set in .env");
 if (!process.env["OPEN_AI_KEY"]) throw new Error("OPEN_AI_KEY is not set in .env");
+
+// ── Home ReplyKeyboard ─────────────────────────────────────────────────────
+const HOME_KEYBOARD = new Keyboard()
+  .text("🚀 Apply").text("📧 Bulk Mail").row()
+  .text("⚙️ SMTP Setup").text("📝 Template").row()
+  .text("👔 Roles").text("👤 Profile").row()
+  .text("📄 Resume").text("❓ Help").row()
+  .text("🔌 Test SMTP").text("✏️ Edit Profile")
+  .resized()
+  .persistent();
 
 // ── Bot initialisation ─────────────────────────────────────────────────────
 const bot = new Bot<MyContext>(BOT_TOKEN);
@@ -96,10 +106,145 @@ async function main(): Promise<void> {
         `${s(!!user?.resume || roleCount > 0)} Resume / Roles (${roleCount} roles configured)\n` +
         `${s(!!user?.profile?.officialName)} Candidate screening profile\n` +
         `${s(!!user?.templates.default)} Cover letter template\n\n` +
-        `Use /help to see all commands.`,
+        `Use the buttons below or /help to see all commands.`,
+      { parse_mode: "Markdown", reply_markup: HOME_KEYBOARD }
+    );
+  });
+
+  // ── Home ReplyKeyboard button handlers ────────────────────────────────────
+  bot.hears("🚀 Apply", (ctx) => ctx.conversation.enter("applyFlow"));
+  bot.hears("📧 Bulk Mail", (ctx) => ctx.conversation.enter("mailFlow"));
+  bot.hears("⚙️ SMTP Setup", (ctx) => ctx.conversation.enter("setupFlow"));
+  bot.hears("📝 Template", (ctx) => ctx.conversation.enter("templateFlow"));
+  bot.hears("👔 Roles", async (ctx) => {
+    const roles = await getRoles(ctx.from!.id);
+    const keyboard = new InlineKeyboard();
+    if (roles.length === 0) {
+      keyboard.text("➕ Add New Role", "add_new_role").row();
+      keyboard.text("❌ Close", "cancel_delete");
+      await ctx.reply(
+        "👔 *Job Roles*\n\nYou haven't created any roles yet.\n\nClick below or run /add\\_role to create your first role!",
+        { parse_mode: "Markdown", reply_markup: keyboard }
+      );
+      return;
+    }
+    let msg = "👔 *Your Job Roles & Resumes*\n\n";
+    roles.forEach((r, idx) => {
+      const resumeInfo = r.resume
+        ? `📄 Resume: \`${r.resume.fileName}\``
+        : `⚠️ No resume attached`;
+      msg += `${idx + 1}. *${escapeMarkdown(r.name)}*\n   ${resumeInfo}\n\n`;
+      keyboard.text(`🗑 Delete "${escapeMarkdown(r.name).slice(0, 18)}"`, `delete_role:${r.id}`).row();
+    });
+    keyboard.text("➕ Add New Role", "add_new_role").row();
+    keyboard.text("❌ Close", "cancel_delete");
+    await ctx.reply(msg, { parse_mode: "Markdown", reply_markup: keyboard });
+  });
+  bot.hears("👤 Profile", async (ctx) => {
+    const user = await getUser(ctx.from!.id);
+    if (!user) { await ctx.reply("No profile found. Send any message to get started."); return; }
+    const lines: string[] = ["👤 *Your Account Profile*\n"];
+    if (user.smtp) {
+      lines.push(`📤 *Email:* \`${user.smtp.user}\`\n🌐 *SMTP:* \`${user.smtp.host}:${user.smtp.port}\`\n👤 *From name:* ${escapeMarkdown(user.smtp.senderName ?? "—")}`);
+    } else {
+      lines.push("📤 *Email:* ❌ Not configured — tap ⚙️ SMTP Setup");
+    }
+    lines.push("");
+    const roles = user.roles ?? [];
+    if (roles.length > 0) {
+      lines.push(`🎯 *Roles (${roles.length}):*\n${roles.map((r) => `• *${escapeMarkdown(r.name)}:* ${r.resume ? `\`${r.resume.fileName}\`` : "⚠️ No resume"}`).join("\n")}\n_/roles to manage_`);
+    } else {
+      lines.push("🎯 *Roles:* ❌ None created — /add\\_role or /roles");
+    }
+    lines.push("");
+    if (user.profile?.officialName || user.profile?.totalExperience) {
+      lines.push(`👤 *Screening Profile:* ✅ Configured\n• Name: ${escapeMarkdown(user.profile.officialName || "—")}\n• Exp: ${escapeMarkdown(user.profile.totalExperience || "—")} | Notice: ${escapeMarkdown(user.profile.noticePeriod || "—")}\n_/candidate\\_profile for full details_`);
+    } else {
+      lines.push("👤 *Screening Profile:* ❌ Not setup — tap ✏️ Edit Profile");
+    }
+    lines.push("");
+    if (user.resume) {
+      lines.push(`📄 *Default Resume:* \`${user.resume.fileName}\`\n🗓 *Uploaded:* ${user.resume.uploadedAt.toLocaleDateString()} · ~${user.resume.text.split(/\s+/).length} words`);
+    }
+    lines.push("");
+    if (user.templates.default) {
+      lines.push(`📝 *Template:* ✅\n_${escapeMarkdown(user.templates.default.slice(0, 100))}${user.templates.default.length > 100 ? "…" : ""}_`);
+    } else {
+      lines.push("📝 *Template:* ❌ Not set — tap 📝 Template");
+    }
+    const profileKeyboard = user.smtp
+      ? new InlineKeyboard().text("🔌 Test SMTP", "test_smtp")
+      : undefined;
+    await ctx.reply(lines.join("\n"), {
+      parse_mode: "Markdown",
+      ...(profileKeyboard ? { reply_markup: profileKeyboard } : {}),
+    });
+  });
+  bot.hears("📄 Resume", async (ctx) => {
+    const user = await getUser(ctx.from!.id);
+    if (!user?.resume) {
+      await ctx.reply("📄 No resume saved yet.\n\nSend a PDF file to upload your resume.");
+      return;
+    }
+    const keyboard = new InlineKeyboard()
+      .text("🗑 Delete Resume", "confirm_delete_resume")
+      .text("❌ Close", "cancel_delete");
+    await ctx.reply(
+      `📄 *Saved Resume*\n\n*File:* \`${user.resume.fileName}\`\n*Uploaded:* ${user.resume.uploadedAt.toLocaleDateString()}\n*Size:* ~${user.resume.text.split(/\s+/).length} words extracted\n\nSend a new PDF at any time to replace it.`,
+      { parse_mode: "Markdown", reply_markup: keyboard }
+    );
+  });
+  bot.hears("❓ Help", async (ctx) => {
+    await ctx.reply(
+      `📖 *Commands*\n\n` +
+        `*📧 Email Setup*\n` +
+        `/setup — Configure your SMTP email account\n` +
+        `/test\\_smtp — Test your saved SMTP connection\n` +
+        `/delete\\_smtp — Remove your saved email config\n\n` +
+        `*🎯 Job Roles & Resumes (1:1)*\n` +
+        `/roles — View and manage your job roles\n` +
+        `/add\\_role — Create a new job role\n` +
+        `_(Upload a PDF at any time to attach to a role)_\n\n` +
+        `*👤 Candidate Profile*\n` +
+        `/candidate\\_profile — View screening details\n` +
+        `/edit\\_profile — Setup or update your screening profile\n\n` +
+        `*📝 Templates*\n` +
+        `/set\\_template — Create or update cover letter tone\n` +
+        `/view\\_template — View your full saved template\n` +
+        `/delete\\_template — Remove your saved template\n\n` +
+        `*🚀 Apply & Bulk Mail*\n` +
+        `/mail — Apply to 1 or more HRs with role selection\n` +
+        `/apply — Quick single application using default resume\n\n` +
+        `*⚙️ Account*\n` +
+        `/profile — Overview of all your saved settings\n` +
+        `/resume — View default resume info\n` +
+        `/reset — Delete all your data (irreversible)\n` +
+        `/cancel — Stop the current action`,
       { parse_mode: "Markdown" }
     );
   });
+  bot.hears("🔌 Test SMTP", async (ctx) => {
+    const user = await getUser(ctx.from!.id);
+    if (!user?.smtp) {
+      await ctx.reply("ℹ️ No SMTP configuration found. Tap ⚙️ SMTP Setup to configure.");
+      return;
+    }
+    await ctx.reply("🔌 Testing your SMTP connection...");
+    try {
+      await verifySmtp(user.smtp);
+      await ctx.reply(
+        `✅ *SMTP connection verified successfully!*\n\n📤 From: \`${user.smtp.user}\`\n🌐 Host: \`${user.smtp.host}:${user.smtp.port}\``,
+        { parse_mode: "Markdown" }
+      );
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Unknown error";
+      await ctx.reply(
+        `❌ *SMTP connection failed*\n\n\`${message}\`\n\nTap ⚙️ SMTP Setup to update your credentials.`,
+        { parse_mode: "Markdown" }
+      );
+    }
+  });
+  bot.hears("✏️ Edit Profile", (ctx) => ctx.conversation.enter("profileFlow"));
 
   // ── /ping ──────────────────────────────────────────────────────────────────
   bot.command("ping", async (ctx) => {

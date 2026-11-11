@@ -209,29 +209,61 @@ export async function setupFlow(
     return;
   }
 
-  // Step 2: SMTP Port
+  // Step 2: SMTP Port — InlineKeyboard
+  const portKeyboard = new InlineKeyboard()
+    .text("587 — STARTTLS ✅ Recommended", "port:587")
+    .row()
+    .text("465 — SSL", "port:465")
+    .text("25 — Legacy", "port:25")
+    .row()
+    .text("✏️ Enter custom port", "port:custom");
+
   await ctx.reply(
-    "*Step 2/5* — Which SMTP port?\n\n" +
-      PORT_OPTIONS.map((p, i) => `${i + 1}. ${p}`).join("\n") +
-      "\n\nReply with the number (1, 2, or 3) or type a custom port.",
-    { parse_mode: "Markdown" },
+    "*Step 2/5* — Which SMTP port?",
+    { parse_mode: "Markdown", reply_markup: portKeyboard },
   );
 
-  const portCtx = await conversation.waitFor("message:text");
-  const portInput = portCtx.message.text.trim();
-  if (portInput === "/cancel") {
-    await ctx.reply("❌ Setup cancelled.");
-    return;
-  }
+  let port: number = 587;
+  while (true) {
+    const portCtx = await conversation.waitFor([
+      "message:text",
+      "callback_query:data",
+    ]);
 
-  let port: number;
-  const portNum = parseInt(portInput, 10);
-  if (portNum >= 1 && portNum <= 3) {
-    port = extractPort(PORT_OPTIONS[portNum - 1] ?? "587");
-  } else if (!isNaN(portNum) && portNum > 0) {
-    port = portNum;
-  } else {
-    port = 587;
+    if (portCtx.callbackQuery) {
+      await portCtx.answerCallbackQuery();
+      const data = portCtx.callbackQuery.data;
+
+      if (data === "port:custom") {
+        await ctx.reply(
+          "✏️ Enter your custom port number (e.g. `2525`):",
+          { parse_mode: "Markdown" },
+        );
+        continue;
+      }
+
+      if (data?.startsWith("port:")) {
+        const val = parseInt(data.slice(5), 10);
+        if (!isNaN(val) && val > 0) {
+          port = val;
+          break;
+        }
+      }
+      continue;
+    }
+
+    const portInput = portCtx.message?.text?.trim() ?? "";
+    if (portInput === "/cancel") {
+      await ctx.reply("❌ Setup cancelled.");
+      return;
+    }
+
+    const portNum = parseInt(portInput, 10);
+    if (!isNaN(portNum) && portNum > 0 && portNum <= 65535) {
+      port = portNum;
+      break;
+    }
+    await ctx.reply("⚠️ Invalid port. Please enter a number between 1–65535:");
   }
 
   // Step 3: Email address
