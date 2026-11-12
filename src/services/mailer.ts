@@ -6,9 +6,9 @@ import { downloadTelegramFile } from "./pdf.js";
 export interface MailParams {
   to: string;
   subject: string;
-  htmlBody: string;         // AI-generated HTML body
-  userSmtp: UserSmtp;       // Loaded from MongoDB, password encrypted
-  resumeFileId: string;     // Telegram permanent file_id
+  htmlBody: string; // AI-generated HTML body
+  userSmtp: UserSmtp; // Loaded from MongoDB, password encrypted
+  resumeFileId: string; // Telegram permanent file_id
   resumeFileName: string;
   botToken: string;
 }
@@ -26,7 +26,7 @@ function wrapHtml(body: string, senderName: string): string {
   // Ensure strong/bold tags stand out in prominent black formatting (#000000)
   const styledBody = body.replace(
     /<(strong|b)(?:\s+[^>]*)?>([\s\S]*?)<\/\1>/gi,
-    '<strong style="color:#000000;font-weight:700;">$2</strong>'
+    '<strong style="color:#000000;font-weight:700;">$2</strong>',
   );
 
   return `<!DOCTYPE html>
@@ -51,13 +51,6 @@ function wrapHtml(body: string, senderName: string): string {
             </td>
           </tr>
           <!-- Footer -->
-          <tr>
-            <td style="padding:16px 40px 24px;border-top:1px solid #e5e7eb;">
-              <p style="margin:0;font-size:12px;color:#9ca3af;text-align:center;">
-                Sent via <strong>Resume Bot</strong> · This email was composed and sent by ${senderName}
-              </p>
-            </td>
-          </tr>
         </table>
       </td>
     </tr>
@@ -65,6 +58,14 @@ function wrapHtml(body: string, senderName: string): string {
 </body>
 </html>`;
 }
+
+//  <tr>
+//             <td style="padding:16px 40px 24px;border-top:1px solid #e5e7eb;">
+//               <p style="margin:0;font-size:12px;color:#9ca3af;text-align:center;">
+//                 Sent via <strong>Resume Bot</strong> · This email was composed and sent by ${senderName}
+//               </p>
+//             </td>
+//           </tr>
 
 /**
  * Strips HTML tags to produce a plain-text fallback for email clients
@@ -113,9 +114,17 @@ export async function verifySmtp(userSmtp: UserSmtp): Promise<void> {
  * 5. Send HTML + plain text email with PDF attachment
  */
 export async function sendApplicationEmail(
-  params: MailParams
+  params: MailParams,
 ): Promise<MailResult> {
-  const { to, subject, htmlBody, userSmtp, resumeFileId, resumeFileName, botToken } = params;
+  const {
+    to,
+    subject,
+    htmlBody,
+    userSmtp,
+    resumeFileId,
+    resumeFileName,
+    botToken,
+  } = params;
 
   // 1. Decrypt password at call time — never stored decrypted
   const smtpPass = decrypt(userSmtp.encryptedPass);
