@@ -31,14 +31,14 @@ export function formatCandidateDetails(
   if (!profile && !role) return "";
   const lines: string[] = [];
 
-  // 1. Total / Relevant Experience
+  // 1. Total Exp & Relevant Exp (each in its own separate line/item)
   const totalExp = profile?.totalExperience;
   const relExp = role?.relevantExperience;
   if (totalExp) {
-    lines.push(`Total Experience: ${totalExp}`);
+    lines.push(`Total Exp: ${totalExp}`);
   }
   if (relExp) {
-    lines.push(`Relevant Experience: ${relExp}`);
+    lines.push(`Relevant Exp: ${relExp}`);
   }
 
   // 2. Current Organization
@@ -51,7 +51,7 @@ export function formatCandidateDetails(
     lines.push(`Notice Period: ${profile.noticePeriod}`);
   }
 
-  // 4. Current / Expected CTC
+  // 4. Current CTC & Expected CTC (each in its own separate line/item)
   const currentCtc = profile?.currentCtc;
   const expectedCtc = role?.expectedCtc ?? profile?.expectedCtc;
   if (currentCtc) {
@@ -61,7 +61,7 @@ export function formatCandidateDetails(
     lines.push(`Expected CTC: ${expectedCtc}`);
   }
 
-  // 5. Current / Preferred Location
+  // 5. Current Location & Preferred Location (each in its own separate line/item)
   const curLoc = profile?.currentLocation;
   const prefLoc = profile?.preferredLocation;
   if (curLoc) {
@@ -152,7 +152,19 @@ Rules:
 - Keyword & Skill Alignment: Carefully analyze the Job Description to extract its core requirements, technical keywords, tools, and responsibilities. Cross-reference them with the candidate's Resume and skills. You MUST explicitly mention these matching relevant keywords and skills in the email content, directly aligning the candidate's hands-on experience and achievements with the employer's needs.
 - Technical Skills Formatting: Make key technical skills, tools, frameworks, and technologies (such as CI/CD, Docker, Kubernetes, AWS, languages/frameworks, and matching JD keywords) bold using <strong> tags (e.g. <strong>CI/CD</strong>, <strong>Docker</strong>) throughout the email body so they stand out boldly in black formatting.
 - Section Name: If candidate screening details/relevant info are provided, title this section strictly as "Relevant Info" (e.g., <p><strong>Relevant Info:</strong></p>). Do NOT name it "Candidate Screening Details".
-- Bold Values in Relevant Info: Present the Relevant Info as a bulleted list (<ul><li>). For every item, bold the value using <strong> (e.g., <li>Total / Relevant Experience: <strong>5 Years / 3.5 Years</strong></li>, <li>Current Organization: <strong>Acme Tech Pvt Ltd</strong></li>, <li>Notice Period: <strong>30 Days</strong></li>, <li>Current / Expected CTC: <strong>14 LPA / 20 LPA</strong></li>, <li>Current / Preferred Location: <strong>Bengaluru / Remote</strong></li>, <li>Education (College/University): <strong>B.Tech in CSE, XYZ University</strong></li>, <li>Reason for Job Change: <strong>Career Growth</strong></li>).
+- Separate List Item for Each Field: Each screening metric MUST have its own separate <li> list item. NEVER combine multiple fields with slashes like "Total / Relevant Exp" or "Current / Expected CTC". Output each individually:
+  * <li>Total Exp: <strong>...</strong></li>
+  * <li>Relevant Exp: <strong>...</strong></li>
+  * <li>Current Organization: <strong>...</strong></li>
+  * <li>Notice Period: <strong>...</strong></li>
+  * <li>Current CTC: <strong>...</strong></li>
+  * <li>Expected CTC: <strong>...</strong></li>
+  * <li>Current Location: <strong>...</strong></li>
+  * <li>Preferred Location: <strong>...</strong></li>
+  * <li>Education: <strong>...</strong></li>
+  * <li>Reason for Job Change: <strong>...</strong></li>
+  (Only output the <li> for fields that exist in the candidate details).
+- Bold Values in Relevant Info: Present the Relevant Info as a bulleted list (<ul><li>). For every item, bold the value using <strong> (e.g., <li>Total Exp: <strong>5 Years</strong></li>, <li>Relevant Exp: <strong>3.5 Years</strong></li>, <li>Current CTC: <strong>14 LPA</strong></li>, <li>Expected CTC: <strong>22 LPA</strong></li>).
 - Strictly No Generic Interview Call-to-Action: Do NOT generate filler or boilerplate closing interview-request paragraphs after the content (such as "I would welcome the opportunity to discuss how my expertise aligns with your requirements. Please let me know a convenient time for an interview." or similar variants).
 - Sign-off: Conclude directly with a polite sign-off:
   ${signOffExample}
@@ -212,7 +224,17 @@ export function cleanApplicationBody(
     "<p><strong>Relevant Info:</strong></p>",
   );
 
-  // 4. Ensure list items have values bolded if AI left them plain
+  // 4. Split any combined items like "Total / Relevant Exp" or "Current / Expected CTC" into distinct <li> items
+  cleaned = cleaned.replace(
+    /<li>\s*(?:Total\s*(?:\/|&)\s*Relevant\s*(?:Exp|Experience))\s*:\s*(?:<strong>)?\s*([^/<]+?)\s*\/\s*([^<]+?)\s*(?:<\/strong>)?\s*<\/li>/gi,
+    "<li>Total Exp: <strong>$1</strong></li>\n<li>Relevant Exp: <strong>$2</strong></li>",
+  );
+  cleaned = cleaned.replace(
+    /<li>\s*(?:Current\s*(?:\/|&)\s*Expected\s*CTC)\s*:\s*(?:<strong>)?\s*([^/<]+?)\s*\/\s*([^<]+?)\s*(?:<\/strong>)?\s*<\/li>/gi,
+    "<li>Current CTC: <strong>$1</strong></li>\n<li>Expected CTC: <strong>$2</strong></li>",
+  );
+
+  // 5. Ensure list items have values bolded if AI left them plain
   cleaned = cleaned.replace(
     /<li>([^:<]+:\s*)([^<]+)<\/li>/gi,
     (_, prefix, val) => {
