@@ -23,6 +23,7 @@ import {
   getRoles,
   getCandidateProfile,
   recordApplicationSent,
+  saveLastSentEmail,
 } from "../services/user.js";
 import type { UserRole, UserResume } from "../models/User.js";
 import { escapeMarkdown, htmlToTelegramMarkdown } from "../services/format.js";
@@ -399,6 +400,8 @@ export async function unifiedApplyFlow(
         allRoles: roles,
         defaultResume: user.resume ?? undefined,
         candidateProfile: candidateProfile ?? undefined,
+        userLastSentEmail: user.lastSentEmail,
+        forceFresh: false,
         jobDescription: "",
         jobTitle: prefilledTitle,
         company: prefilledCompany,
@@ -407,6 +410,7 @@ export async function unifiedApplyFlow(
         requestedMetrics: [],
         draftSubject: "",
         draftBody: "",
+        isCachedDraft: false,
         sendResults: { sent: [], failed: [] },
         status: "input",
         error: "",
@@ -459,7 +463,9 @@ export async function unifiedApplyFlow(
       `📧 *To (${recipientEmails.length}):* ${emailListDisplay}\n` +
       `👔 *Role:* ${escapeMarkdown(selectedRoleName)}`;
 
-    if (graphResult.matchReasoning) {
+    if (graphResult.isCachedDraft) {
+      preview += ` _(⚡ Using last sent email)_`;
+    } else if (graphResult.matchReasoning) {
       preview += ` _(AI matched)_`;
     }
     preview += `\n`;
@@ -534,8 +540,8 @@ export async function unifiedApplyFlow(
       await ctx.reply(
         "✏️ *Regenerate Application*\n\n" +
           "What changes or adjustments would you like to make?\n" +
-          "_e.g. 'Make it shorter', 'Focus heavily on AWS & Kubernetes experience', 'More formal'_\n\n" +
-          "Send your notes, or send /skip to regenerate as-is:\n\n" +
+          "_e.g. 'Change company to Uber', 'Make it shorter', 'Emphasize Kafka & Go experience'_\n\n" +
+          "Send your tweak comments, or send /skip to generate a fresh draft from scratch:\n\n" +
           "_Send /cancel to abort._",
         { parse_mode: "Markdown" },
       );
@@ -549,7 +555,8 @@ export async function unifiedApplyFlow(
       }
       if (await handleBack(feedbackInput, ctx)) return;
 
-      const userFeedback = feedbackInput === "/skip" ? undefined : feedbackInput;
+      const isSkip = feedbackInput === "/skip";
+      const userFeedback = isSkip ? undefined : feedbackInput;
 
       const regenMsg = await ctx.reply(
         "🤖 *Regenerating Application...*\n\n" +
@@ -563,6 +570,9 @@ export async function unifiedApplyFlow(
           graph.invoke({
             ...graphResult,
             feedback: userFeedback,
+            forceFresh: isSkip,
+            draftSubject: isSkip ? "" : graphResult.draftSubject,
+            draftBody: isSkip ? "" : graphResult.draftBody,
             status: "input",
           }),
         )) as ApplyState;
@@ -676,6 +686,10 @@ export async function unifiedApplyFlow(
             selectedRole: chosenRole,
             selectedResume: chosenResume,
             allRoles: roles,
+            draftSubject: "",
+            draftBody: "",
+            feedback: undefined,
+            forceFresh: false,
             status: "input",
           }),
         )) as ApplyState;
@@ -716,9 +730,21 @@ export async function unifiedApplyFlow(
 
     let userStats = undefined;
     if (results.sent.length > 0) {
-      userStats = await conversation.external(() =>
-        recordApplicationSent(user.telegramId, results.sent.length),
-      );
+      userStats = await conversation.external(async () => {
+        const stats = await recordApplicationSent(
+          user.telegramId,
+          results.sent.length,
+        );
+        await saveLastSentEmail(
+          user.telegramId,
+          {
+            subject: graphResult.draftSubject,
+            body: graphResult.draftBody,
+          },
+          graphResult.selectedRole?.id,
+        );
+        return stats;
+      });
     }
 
     await ctx.api

@@ -44,6 +44,15 @@ export interface CandidateProfile {
 }
 
 /**
+ * Last sent email content stored per role (or default resume) for instant reuse and tweaking.
+ */
+export interface LastSentEmail {
+  subject: string;
+  body: string;
+  sentAt?: Date;
+}
+
+/**
  * Role created by the user (e.g. 'Senior Backend Engineer').
  * Has a 1-to-1 relationship with an attached UserResume,
  * plus role-specific application details (relevant exp, expected CTC, holding offer).
@@ -55,6 +64,7 @@ export interface UserRole {
   relevantExperience?: string | undefined; // e.g. "4 Years in Node.js / TypeScript"
   expectedCtc?: string | undefined;        // e.g. "22 LPA"
   holdingOffer?: string | undefined;       // e.g. "Yes - 20 LPA" or "None"
+  lastSentEmail?: LastSentEmail | undefined; // Reusable base email for this role
   createdAt: Date;
   updatedAt: Date;
 }
@@ -83,6 +93,7 @@ export interface UserDoc {
     default?: string; // Base tone / cover letter style notes
   };
   stats?: UserStats;        // Application statistics
+  lastSentEmail?: LastSentEmail | undefined; // Fallback reusable email for default resume
   createdAt: Date;
   updatedAt: Date;
 }

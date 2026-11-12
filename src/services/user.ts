@@ -8,6 +8,7 @@ import type {
   CandidateProfile,
   UserRole,
   UserStats,
+  LastSentEmail,
 } from "../models/User.js";
 
 function collection(): Promise<Collection<UserDoc>> {
@@ -426,4 +427,51 @@ export async function recordApplicationSent(
   );
 
   return result?.stats ?? { jobsApplied: 0, emailsSent: 0 };
+}
+
+// ── Role & User Reusable Email Operations ───────────────────────────────────
+
+/**
+ * Saves or updates the last sent email content on the role (or default user document).
+ * This enables instant reuse and tweak-based regeneration on future applications for the same role.
+ *
+ * @param telegramId - User's telegram ID
+ * @param email - Subject and HTML body of the sent email
+ * @param roleId - Optional role ID (if application was sent under a specific role)
+ */
+export async function saveLastSentEmail(
+  telegramId: number,
+  email: { subject: string; body: string },
+  roleId?: string,
+): Promise<void> {
+  const col = await collection();
+  const now = new Date();
+  const lastSent: LastSentEmail = {
+    subject: email.subject,
+    body: email.body,
+    sentAt: now,
+  };
+
+  if (roleId) {
+    await col.updateOne(
+      { telegramId, "roles.id": roleId },
+      {
+        $set: {
+          "roles.$.lastSentEmail": lastSent,
+          "roles.$.updatedAt": now,
+          updatedAt: now,
+        },
+      },
+    );
+  } else {
+    await col.updateOne(
+      { telegramId },
+      {
+        $set: {
+          lastSentEmail: lastSent,
+          updatedAt: now,
+        },
+      },
+    );
+  }
 }

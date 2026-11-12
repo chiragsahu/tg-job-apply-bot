@@ -16,6 +16,7 @@ import type {
   UserRole,
   UserResume,
   UserSmtp,
+  LastSentEmail,
 } from "../models/User.js";
 import { fetchJobPage, extractUrl, isUrl } from "./scraper.js";
 import { sendApplicationEmail } from "./mailer.js";
@@ -54,7 +55,9 @@ export const ApplyAnnotation = Annotation.Root({
   allRoles: Annotation<UserRole[]>,
   defaultResume: Annotation<UserResume | undefined>,
   candidateProfile: Annotation<CandidateProfile | undefined>,
+  userLastSentEmail: Annotation<LastSentEmail | undefined>,
   feedback: Annotation<string | undefined>,
+  forceFresh: Annotation<boolean | undefined>,
 
   // Populated by graph nodes
   jobDescription: Annotation<string>,
@@ -67,6 +70,7 @@ export const ApplyAnnotation = Annotation.Root({
   requestedMetrics: Annotation<string[]>,      // which screening fields JD asks for
   draftSubject: Annotation<string>,
   draftBody: Annotation<string>,               // HTML
+  isCachedDraft: Annotation<boolean | undefined>,
   sendResults: Annotation<{ sent: string[]; failed: { email: string; error: string }[] }>,
   status: Annotation<string>,                  // tracks current phase
   error: Annotation<string>,
@@ -402,7 +406,32 @@ async function generateEmail(
     filteredProfile.officialName = state.userSmtp.senderName;
   }
 
+  // Check if we can reuse the last sent email for this role / default resume
+  const cachedEmail =
+    state.selectedRole?.lastSentEmail ??
+    (!state.selectedRole ? state.userLastSentEmail : undefined);
+
+  if (
+    !state.forceFresh &&
+    !state.feedback &&
+    !state.draftSubject &&
+    cachedEmail?.subject &&
+    cachedEmail?.body
+  ) {
+    return {
+      draftSubject: cachedEmail.subject,
+      draftBody: cachedEmail.body,
+      isCachedDraft: true,
+      status: "preview",
+    };
+  }
+
   try {
+    const existingDraft =
+      state.draftSubject && state.draftBody
+        ? { subject: state.draftSubject, body: state.draftBody }
+        : undefined;
+
     const application = await tailorApplication(
       resumeText,
       jd,
@@ -410,11 +439,13 @@ async function generateEmail(
       filteredProfile,
       filteredRole,
       state.feedback,
+      existingDraft,
     );
 
     return {
       draftSubject: application.subject,
       draftBody: application.body,
+      isCachedDraft: false,
       status: "preview",
     };
   } catch (err) {

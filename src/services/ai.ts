@@ -105,6 +105,7 @@ function buildPrompt(
   profile?: CandidateProfile,
   role?: UserRole,
   feedback?: string,
+  existingDraft?: { subject: string; body: string },
 ): string {
   const candidateDetailsBlock = formatCandidateDetails(profile, role);
   const candidateName = profile?.officialName || "[Candidate Name]";
@@ -113,6 +114,49 @@ function buildPrompt(
   const signOffExample = candidateMobile
     ? `<p>Best regards,<br>${candidateName}<br>${candidateMobile}</p>`
     : `<p>Best regards,<br>${candidateName}</p>`;
+
+  // When tweaking an existing draft based on candidate comments
+  if (existingDraft?.subject && existingDraft?.body && feedback?.trim()) {
+    return `You are a professional executive job application assistant.
+
+The candidate has an existing email draft and wants to adjust/tweak it based on specific feedback comments.
+
+---
+CURRENT EMAIL DRAFT TO TWEAK:
+Subject: ${existingDraft.subject}
+Body (HTML):
+${existingDraft.body}
+
+---
+CANDIDATE'S TWEAK COMMENTS / REVISION REQUEST:
+"${feedback.trim()}"
+
+---
+CANDIDATE BACKGROUND & SCREENING DETAILS:
+${candidateDetailsBlock}
+${resumeText ? `\nResume snippet:\n${resumeText.slice(0, 1500)}` : ""}
+
+---
+JOB DESCRIPTION / TARGET DETAILS:
+${jobDesc || "Target role matching candidate qualifications."}
+
+---
+INSTRUCTIONS:
+1. Modify and refine the CURRENT EMAIL DRAFT according to the candidate's tweak comments.
+2. If the user mentions updating company name, job title, or specific technical experience, adjust them accurately.
+3. Keep the strong, formal executive tone and good content of the current draft; only adjust what needs to be changed.
+4. Keep the HTML body concise (under 320 words). Use only <p>, <strong>, <ul>, <li> tags. No inline styles.
+5. Ensure key technical skills and screening values remain bold with <strong>.
+6. Sign-off format:
+   ${signOffExample}
+   ${candidateMobile ? `Place the contact number (${candidateMobile}) directly below the candidate's name.` : ""}
+
+Output ONLY a valid JSON object:
+{
+  "subject": "Compelling and specific subject line",
+  "body": "Full updated email body as HTML using only <p>, <strong>, <ul>, <li> tags"
+}`;
+  }
 
   const feedbackBlock = feedback?.trim()
     ? `\n---\nREVISION REQUEST / USER FEEDBACK:\nThe candidate requested these specific changes for this draft:\n"${feedback.trim()}"\nYou MUST incorporate these requested changes.\n`
@@ -286,6 +330,7 @@ export async function tailorApplication(
   profile?: CandidateProfile,
   role?: UserRole,
   feedback?: string,
+  existingDraft?: { subject: string; body: string },
 ): Promise<TailoredApplication> {
   const model = process.env["OPENROUTER_MODEL"] ?? "openai/gpt-4o-mini";
 
@@ -304,7 +349,7 @@ export async function tailorApplication(
   let raw: string;
   try {
     raw = await callAI(
-      buildPrompt(resumeText, jobDesc, template, profile, role, feedback),
+      buildPrompt(resumeText, jobDesc, template, profile, role, feedback, existingDraft),
     );
     const parsed = JSON.parse(raw) as TailoredApplication;
     if (!parsed.subject || !parsed.body) throw new Error("Missing keys");
@@ -317,7 +362,7 @@ export async function tailorApplication(
   } catch {
     // Retry once with an even more explicit instruction
     const retryPrompt =
-      buildPrompt(resumeText, jobDesc, template, profile, role, feedback) +
+      buildPrompt(resumeText, jobDesc, template, profile, role, feedback, existingDraft) +
       "\n\nIMPORTANT: Your previous response failed JSON parsing. Respond ONLY with a raw JSON object, nothing else.";
 
     raw = await callAI(retryPrompt);
