@@ -22,6 +22,7 @@ import {
   getUser,
   getRoles,
   getCandidateProfile,
+  recordApplicationSent,
 } from "../services/user.js";
 import type { UserRole, UserResume } from "../models/User.js";
 import { escapeMarkdown, htmlToTelegramMarkdown } from "../services/format.js";
@@ -713,6 +714,13 @@ export async function unifiedApplyFlow(
       dispatchEmailsDirect(graphResult),
     );
 
+    let userStats = undefined;
+    if (results.sent.length > 0) {
+      userStats = await conversation.external(() =>
+        recordApplicationSent(user.telegramId, results.sent.length),
+      );
+    }
+
     await ctx.api
       .deleteMessage(ctx.chat!.id, sendingMsg.message_id)
       .catch(() => {});
@@ -728,6 +736,12 @@ export async function unifiedApplyFlow(
 
     if (results.sent.length > 0) {
       summary += `\n✅ ${results.sent.map((e) => `\`${e}\``).join(", ")}`;
+    }
+
+    if (userStats) {
+      const jobNoun = userStats.jobsApplied === 1 ? "job" : "jobs";
+      const emailNoun = userStats.emailsSent === 1 ? "email" : "emails";
+      summary += `\n\n📊 *Your Stats:* ${userStats.jobsApplied} ${jobNoun} applied · ${userStats.emailsSent} ${emailNoun} sent`;
     }
 
     if (results.failed.length > 0) {

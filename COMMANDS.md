@@ -16,7 +16,7 @@ A complete reference guide for all available Telegram commands in **Resume Bot**
 
 - **/profile**  
   Shows an overview of your entire account settings in one single dashboard.  
-  Displays your connected SMTP email, active roles, default resume, and cover letter template preview.
+  Displays your connected SMTP email, active roles, default resume, cover letter template, and application activity statistics.
 
 ---
 

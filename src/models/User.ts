@@ -59,6 +59,13 @@ export interface UserRole {
   updatedAt: Date;
 }
 
+/**
+ * Application statistics tracking counts.
+ */
+export interface UserStats {
+  jobsApplied: number; // Total job application sessions dispatched
+  emailsSent: number;  // Total individual recipient emails delivered
+}
 
 /**
  * Top-level MongoDB user document.
@@ -75,6 +82,7 @@ export interface UserDoc {
   templates: {
     default?: string; // Base tone / cover letter style notes
   };
+  stats?: UserStats;        // Application statistics
   createdAt: Date;
   updatedAt: Date;
 }

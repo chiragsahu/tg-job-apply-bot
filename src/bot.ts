@@ -86,6 +86,10 @@ async function main(): Promise<void> {
     const user = await getUser(ctx.from!.id);
     const s = (v: boolean) => (v ? "✅" : "❌");
     const roleCount = user?.roles?.length ?? 0;
+    const stats = user?.stats;
+    const statsLine = stats && stats.jobsApplied > 0
+      ? `📊 *Activity:* ${stats.jobsApplied} jobs applied · ${stats.emailsSent} emails sent\n`
+      : "";
 
     await ctx.reply(
       `👋 *Welcome to Resume Bot!*\n\n` +
@@ -94,7 +98,8 @@ async function main(): Promise<void> {
         `${s(!!user?.smtp)} Email (SMTP) configured\n` +
         `${s(!!user?.resume || roleCount > 0)} Resume / Roles (${roleCount} roles configured)\n` +
         `${s(!!user?.profile?.officialName)} Candidate screening profile\n` +
-        `${s(!!user?.templates.default)} Cover letter template\n\n` +
+        `${s(!!user?.templates.default)} Cover letter template\n` +
+        (statsLine ? `\n${statsLine}` : "\n") +
         `Use the buttons below or /help to see all commands.`,
       { parse_mode: "Markdown", reply_markup: HOME_KEYBOARD }
     );
@@ -186,6 +191,9 @@ async function main(): Promise<void> {
     } else {
       lines.push("📝 *Template:* ❌ Not set");
     }
+    lines.push("");
+    const stats = user.stats ?? { jobsApplied: 0, emailsSent: 0 };
+    lines.push(`📊 *Activity Stats:* ${stats.jobsApplied} jobs applied · ${stats.emailsSent} emails sent`);
     // Build inline action buttons: Edit Profile first, then Test SMTP, then Setup SMTP
     const profileInlineKb = new InlineKeyboard()
       .text("✏️ Edit Profile", "edit_profile_btn")
@@ -378,6 +386,10 @@ async function main(): Promise<void> {
     } else {
       lines.push("📝 *Template:* ❌ Not set — /set\\_template");
     }
+
+    lines.push("");
+    const stats = user.stats ?? { jobsApplied: 0, emailsSent: 0 };
+    lines.push(`📊 *Activity Stats:* ${stats.jobsApplied} jobs applied · ${stats.emailsSent} emails sent`);
 
     const profileKeyboard = user.smtp
       ? new InlineKeyboard().text("🔌 Test SMTP", "test_smtp")

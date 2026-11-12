@@ -7,6 +7,7 @@ import type {
   UserResume,
   CandidateProfile,
   UserRole,
+  UserStats,
 } from "../models/User.js";
 
 function collection(): Promise<Collection<UserDoc>> {
@@ -28,7 +29,12 @@ export async function getOrCreateUser(
   await col.updateOne(
     { telegramId },
     {
-      $setOnInsert: { telegramId, templates: {}, createdAt: now },
+      $setOnInsert: {
+        telegramId,
+        templates: {},
+        stats: { jobsApplied: 0, emailsSent: 0 },
+        createdAt: now,
+      },
       $set: {
         updatedAt: now,
         ...(username && { username }),
@@ -374,4 +380,50 @@ export async function deleteRoleResume(
       },
     },
   );
+}
+
+// ── Application Statistics Operations ────────────────────────────────────────
+
+/**
+ * Gets the application statistics for a user.
+ */
+export async function getUserStats(telegramId: number): Promise<UserStats> {
+  const col = await collection();
+  const user = await col.findOne(
+    { telegramId },
+    { projection: { stats: 1 } },
+  );
+  return user?.stats ?? { jobsApplied: 0, emailsSent: 0 };
+}
+
+/**
+ * Atomically increments application statistics for a user upon successful delivery.
+ * Uses MongoDB $inc so it is atomic and safely initializes fields if missing.
+ *
+ * @param telegramId - User's telegram ID
+ * @param emailsDeliveredCount - Number of emails successfully delivered in this application
+ */
+export async function recordApplicationSent(
+  telegramId: number,
+  emailsDeliveredCount: number,
+): Promise<UserStats> {
+  if (emailsDeliveredCount <= 0) {
+    return getUserStats(telegramId);
+  }
+
+  const col = await collection();
+  const now = new Date();
+  const result = await col.findOneAndUpdate(
+    { telegramId },
+    {
+      $inc: {
+        "stats.jobsApplied": 1,
+        "stats.emailsSent": emailsDeliveredCount,
+      },
+      $set: { updatedAt: now },
+    },
+    { returnDocument: "after", projection: { stats: 1 } },
+  );
+
+  return result?.stats ?? { jobsApplied: 0, emailsSent: 0 };
 }
