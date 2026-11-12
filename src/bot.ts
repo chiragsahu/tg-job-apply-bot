@@ -33,9 +33,8 @@ import { verifySmtp } from "./services/mailer.js";
 
 import { setupFlow } from "./conversations/setup.js";
 import { templateFlow } from "./conversations/template.js";
-import { applyFlow } from "./conversations/apply.js";
+import { unifiedApplyFlow } from "./conversations/unified-apply.js";
 import { profileFlow } from "./conversations/profile.js";
-import { mailFlow } from "./conversations/mail.js";
 import { addRoleFlow } from "./conversations/role.js";
 
 import type { BotContext, MyContext, SessionData } from "./types.js";
@@ -70,9 +69,8 @@ async function main(): Promise<void> {
   bot.use(conversations<MyContext, BotContext>());
   bot.use(createConversation<MyContext, BotContext>(setupFlow, "setupFlow"));
   bot.use(createConversation<MyContext, BotContext>(templateFlow, "templateFlow"));
-  bot.use(createConversation<MyContext, BotContext>(applyFlow, "applyFlow"));
+  bot.use(createConversation<MyContext, BotContext>(unifiedApplyFlow, "unifiedApplyFlow"));
   bot.use(createConversation<MyContext, BotContext>(profileFlow, "profileFlow"));
-  bot.use(createConversation<MyContext, BotContext>(mailFlow, "mailFlow"));
   bot.use(createConversation<MyContext, BotContext>(addRoleFlow, "addRoleFlow"));
 
   // 4. Auto-upsert user on every interaction
@@ -112,11 +110,11 @@ async function main(): Promise<void> {
   // ── Action flows: switch to Back keyboard first, then enter conversation ──
   bot.hears("🚀 Apply", async (ctx) => {
     await ctx.reply("🚀 Starting application flow…", { reply_markup: BACK_KEYBOARD });
-    await ctx.conversation.enter("applyFlow");
+    await ctx.conversation.enter("unifiedApplyFlow");
   });
   bot.hears("📧 Bulk Mail", async (ctx) => {
-    await ctx.reply("📧 Starting bulk mail flow…", { reply_markup: BACK_KEYBOARD });
-    await ctx.conversation.enter("mailFlow");
+    await ctx.reply("🚀 Starting application flow…", { reply_markup: BACK_KEYBOARD });
+    await ctx.conversation.enter("unifiedApplyFlow");
   });
   bot.hears("📝 Template", async (ctx) => {
     await ctx.reply("📝 Starting template setup…", { reply_markup: BACK_KEYBOARD });
@@ -188,13 +186,14 @@ async function main(): Promise<void> {
     } else {
       lines.push("📝 *Template:* ❌ Not set");
     }
-    // Build inline action buttons: Edit Profile first, then Test SMTP
+    // Build inline action buttons: Edit Profile first, then Test SMTP, then Setup SMTP
     const profileInlineKb = new InlineKeyboard()
       .text("✏️ Edit Profile", "edit_profile_btn")
       .row();
     if (user.smtp) {
-      profileInlineKb.text("🔌 Test SMTP", "test_smtp");
+      profileInlineKb.text("🔌 Test SMTP", "test_smtp").row();
     }
+    profileInlineKb.text("⚙️ Setup SMTP", "setup_smtp_btn");
     await ctx.reply(lines.join("\n"), { parse_mode: "Markdown", reply_markup: BACK_KEYBOARD });
     await ctx.reply("What would you like to do?", { reply_markup: profileInlineKb });
   });
@@ -254,9 +253,8 @@ async function main(): Promise<void> {
         `/set\\_template — Create or update cover letter tone\n` +
         `/view\\_template — View your full saved template\n` +
         `/delete\\_template — Remove your saved template\n\n` +
-        `*🚀 Apply & Bulk Mail*\n` +
-        `/mail — Apply to 1 or more HRs with role selection\n` +
-        `/apply — Quick single application using default resume\n\n` +
+        `*🚀 Job Application*\n` +
+        `/apply — Smart application pipeline: paste URL, JD text, or role title. AI matches best resume and includes screening metrics when requested\n\n` +
         `*⚙️ Account*\n` +
         `/profile — Overview of all your saved settings\n` +
         `/resume — View default resume info\n` +
@@ -290,9 +288,8 @@ async function main(): Promise<void> {
         `/set\\_template — Create or update cover letter tone\n` +
         `/view\\_template — View your full saved template\n` +
         `/delete\\_template — Remove your saved template\n\n` +
-        `*🚀 Apply & Bulk Mail*\n` +
-        `/mail — Apply to 1 or more HRs with role selection (/mail hr@co.com, recruiter@co.com)\n` +
-        `/apply — Quick single application using default resume\n\n` +
+        `*🚀 Job Application*\n` +
+        `/apply — Smart application pipeline: paste URL, JD text, or role title (/apply https://... or /apply hr@co.com). AI matches best resume and includes screening metrics when requested\n\n` +
         `*⚙️ Account*\n` +
         `/profile — Overview of all your saved settings\n` +
         `/resume — View default resume info\n` +
@@ -496,16 +493,11 @@ async function main(): Promise<void> {
     }
   });
 
-  // ── /mail & /apply Commands ────────────────────────────────────────────────
+  // ── /apply & /mail Commands ────────────────────────────────────────────────
 
-  bot.command("mail", async (ctx) => {
-    await ctx.reply("📧 Starting bulk mail flow…", { reply_markup: BACK_KEYBOARD });
-    await ctx.conversation.enter("mailFlow");
-  });
-
-  bot.command("apply", async (ctx) => {
+  bot.command(["apply", "mail"], async (ctx) => {
     await ctx.reply("🚀 Starting application flow…", { reply_markup: BACK_KEYBOARD });
-    await ctx.conversation.enter("applyFlow");
+    await ctx.conversation.enter("unifiedApplyFlow");
   });
 
 
@@ -771,6 +763,12 @@ async function main(): Promise<void> {
     await ctx.answerCallbackQuery();
     await ctx.reply("✏️ Editing screening profile…", { reply_markup: BACK_KEYBOARD });
     await ctx.conversation.enter("profileFlow");
+  });
+
+  bot.callbackQuery("setup_smtp_btn", async (ctx) => {
+    await ctx.answerCallbackQuery();
+    await ctx.reply("⚙️ Starting SMTP setup…", { reply_markup: BACK_KEYBOARD });
+    await ctx.conversation.enter("setupFlow");
   });
 
   bot.callbackQuery(/^delete_role:(.+)$/, async (ctx) => {

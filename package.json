@@ -11,6 +11,9 @@
   "dependencies": {
     "@grammyjs/conversations": "^2.1.1",
     "@grammyjs/storage-mongodb": "^2.6.0",
+    "@langchain/core": "^1.4.0",
+    "@langchain/langgraph": "^1.7.3",
+    "@langchain/openai": "^1.8.4",
     "cheerio": "^1.2.0",
     "dotenv": "^18.0.7",
     "grammy": "^1.46.0",
