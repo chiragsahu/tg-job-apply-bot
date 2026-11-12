@@ -54,6 +54,7 @@ export const ApplyAnnotation = Annotation.Root({
   allRoles: Annotation<UserRole[]>,
   defaultResume: Annotation<UserResume | undefined>,
   candidateProfile: Annotation<CandidateProfile | undefined>,
+  feedback: Annotation<string | undefined>,
 
   // Populated by graph nodes
   jobDescription: Annotation<string>,
@@ -408,6 +409,7 @@ async function generateEmail(
       state.template ?? "",
       filteredProfile,
       filteredRole,
+      state.feedback,
     );
 
     return {

@@ -26,7 +26,7 @@ export interface TailoredApplication {
 
 export function formatCandidateDetails(
   profile?: CandidateProfile,
-  role?: UserRole
+  role?: UserRole,
 ): string {
   if (!profile && !role) return "";
   const lines: string[] = [];
@@ -34,11 +34,10 @@ export function formatCandidateDetails(
   // 1. Total / Relevant Experience
   const totalExp = profile?.totalExperience;
   const relExp = role?.relevantExperience;
-  if (totalExp && relExp) {
-    lines.push(`Total / Relevant Experience: ${totalExp} / ${relExp}`);
-  } else if (totalExp) {
+  if (totalExp) {
     lines.push(`Total Experience: ${totalExp}`);
-  } else if (relExp) {
+  }
+  if (relExp) {
     lines.push(`Relevant Experience: ${relExp}`);
   }
 
@@ -55,22 +54,20 @@ export function formatCandidateDetails(
   // 4. Current / Expected CTC
   const currentCtc = profile?.currentCtc;
   const expectedCtc = role?.expectedCtc ?? profile?.expectedCtc;
-  if (currentCtc && expectedCtc) {
-    lines.push(`Current / Expected CTC: ${currentCtc} / ${expectedCtc}`);
-  } else if (currentCtc) {
+  if (currentCtc) {
     lines.push(`Current CTC: ${currentCtc}`);
-  } else if (expectedCtc) {
+  }
+  if (expectedCtc) {
     lines.push(`Expected CTC: ${expectedCtc}`);
   }
 
   // 5. Current / Preferred Location
   const curLoc = profile?.currentLocation;
   const prefLoc = profile?.preferredLocation;
-  if (curLoc && prefLoc) {
-    lines.push(`Current / Preferred Location: ${curLoc} / ${prefLoc}`);
-  } else if (curLoc) {
+  if (curLoc) {
     lines.push(`Current Location: ${curLoc}`);
-  } else if (prefLoc) {
+  }
+  if (prefLoc) {
     lines.push(`Preferred Location: ${prefLoc}`);
   }
 
@@ -90,7 +87,8 @@ export function formatCandidateDetails(
   }
 
   // 9. Candidate identification details if present
-  if (profile?.officialName) lines.push(`Official Name: ${profile.officialName}`);
+  if (profile?.officialName)
+    lines.push(`Official Name: ${profile.officialName}`);
   if (profile?.emailId) lines.push(`Email: ${profile.emailId}`);
   if (profile?.mobile) lines.push(`Mobile: ${profile.mobile}`);
   if (profile?.dob) lines.push(`DOB: ${profile.dob}`);
@@ -105,7 +103,8 @@ function buildPrompt(
   jobDesc: string,
   template: string,
   profile?: CandidateProfile,
-  role?: UserRole
+  role?: UserRole,
+  feedback?: string,
 ): string {
   const candidateDetailsBlock = formatCandidateDetails(profile, role);
   const candidateName = profile?.officialName || "[Candidate Name]";
@@ -115,7 +114,11 @@ function buildPrompt(
     ? `<p>Best regards,<br>${candidateName}<br>${candidateMobile}</p>`
     : `<p>Best regards,<br>${candidateName}</p>`;
 
-  return `You are a professional job application assistant.
+  const feedbackBlock = feedback?.trim()
+    ? `\n---\nREVISION REQUEST / USER FEEDBACK:\nThe candidate requested these specific changes for this draft:\n"${feedback.trim()}"\nYou MUST incorporate these requested changes.\n`
+    : "";
+
+  return `You are a professional executive job application assistant.
 
 Given the following inputs, generate a tailored job application email.
 
@@ -129,19 +132,23 @@ ${jobDesc || "General application matching candidate's qualifications."}
 
 ---
 TONE / TEMPLATE NOTES (from the candidate):
-${template || "Professional and concise. Highlight relevant technical skills."}
-
+${template || "Professional, direct, and concise."}
+${feedbackBlock}
 ---
 Output ONLY a valid JSON object with exactly these two keys:
 {
   "subject": "A compelling, specific email subject line (not generic)",
-  "body": "Full email body as HTML. Use only <p>, <strong>, <ul>, <li> tags. No inline styles. No <html>/<body>/<head> tags. Structure: greeting → opening hook matching the role → 2-3 key technical skills aligned to the JD → 'Relevant Info' section (if screening details are provided) → sign-off."
+  "body": "Full email body as HTML. Use only <p>, <strong>, <ul>, <li> tags. No inline styles. No <html>/<body>/<head> tags. Structure: professional greeting → direct opening stating role & company → 2-3 key technical achievements/skills aligned to the JD → 'Relevant Info' section (if screening details are provided) → sign-off."
 }
 
 Rules:
-- Keep body under 380 words.
-- Extract only skills and experiences that genuinely appear in the resume or candidate details.
-- Do NOT invent or hallucinate qualifications.
+- Keep body concise and under 320 words.
+- Tone: Strictly formal, confident, crisp, and to the point.
+- NO AI Cliches or Fluff:
+  * NEVER begin with "I am excited to...", "I am thrilled to...", "I am delighted to...", "I hope this email finds you well", or similar artificial or overly eager openings.
+  * Start directly and formally: e.g., "I am writing to apply for the [Position] role at [Company]." or "With over [X] years of experience in [Core Domain], I am writing to submit my application for the [Position] position at [Company]."
+  * Do NOT use cheesy buzzwords like "deeply passionate", "unique blend", "cutting-edge", or "dynamic environment". Keep it factual, grounded in real achievements, and professional.
+- Extract only skills and experiences that genuinely appear in the resume or candidate details. Do NOT invent or hallucinate qualifications.
 - Keyword & Skill Alignment: Carefully analyze the Job Description to extract its core requirements, technical keywords, tools, and responsibilities. Cross-reference them with the candidate's Resume and skills. You MUST explicitly mention these matching relevant keywords and skills in the email content, directly aligning the candidate's hands-on experience and achievements with the employer's needs.
 - Technical Skills Formatting: Make key technical skills, tools, frameworks, and technologies (such as CI/CD, Docker, Kubernetes, AWS, languages/frameworks, and matching JD keywords) bold using <strong> tags (e.g. <strong>CI/CD</strong>, <strong>Docker</strong>) throughout the email body so they stand out boldly in black formatting.
 - Section Name: If candidate screening details/relevant info are provided, title this section strictly as "Relevant Info" (e.g., <p><strong>Relevant Info:</strong></p>). Do NOT name it "Candidate Screening Details".
@@ -154,34 +161,72 @@ Rules:
 - Respond ONLY with the JSON object. No markdown fences, no commentary.`;
 }
 
-export function cleanApplicationBody(body: string, candidateName?: string, mobile?: string): string {
+export function cleanApplicationBody(
+  body: string,
+  candidateName?: string,
+  mobile?: string,
+): string {
   let cleaned = body;
 
   // 1. Remove unwanted boilerplate closing sentences / paragraphs
   // e.g. "I would welcome the opportunity to discuss how my expertise aligns with your requirements. Please let me know a convenient time for an interview."
   cleaned = cleaned
-    .replace(/<p>\s*I would welcome the opportunity to discuss[\s\S]*?(?:interview|convenient time)\.?\s*<\/p>/gi, "")
-    .replace(/<p>\s*Please let me know a convenient time for an interview\.?\s*<\/p>/gi, "")
-    .replace(/<p>\s*I look forward to discussing how my (?:skills|expertise|experience)[\s\S]*?interview\.?\s*<\/p>/gi, "")
-    .replace(/I would welcome the opportunity to discuss how my (?:skills|expertise|experience) aligns? with your requirements\.?\s*/gi, "")
-    .replace(/Please let me know a convenient time for an interview\.?\s*/gi, "")
+    .replace(
+      /<p>\s*I would welcome the opportunity to discuss[\s\S]*?(?:interview|convenient time)\.?\s*<\/p>/gi,
+      "",
+    )
+    .replace(
+      /<p>\s*Please let me know a convenient time for an interview\.?\s*<\/p>/gi,
+      "",
+    )
+    .replace(
+      /<p>\s*I look forward to discussing how my (?:skills|expertise|experience)[\s\S]*?interview\.?\s*<\/p>/gi,
+      "",
+    )
+    .replace(
+      /I would welcome the opportunity to discuss how my (?:skills|expertise|experience) aligns? with your requirements\.?\s*/gi,
+      "",
+    )
+    .replace(
+      /Please let me know a convenient time for an interview\.?\s*/gi,
+      "",
+    )
     .replace(/<p>\s*<\/p>/gi, "");
 
-  // 2. Ensure section title is "Relevant Info" if AI used "Candidate Screening Details" or similar
+  // 2. Remove AI cliches like "I am excited to...", "I am thrilled to...", "I hope this email finds you well"
+  cleaned = cleaned
+    .replace(
+      /<p>\s*I am (?:extremely |very )?(?:excited|thrilled|delighted|pleased) to (?:apply for|submit my application for|express my interest in)/gi,
+      "<p>I am writing to apply for",
+    )
+    .replace(
+      /I am (?:extremely |very )?(?:excited|thrilled|delighted|pleased) to (?:apply for|submit my application for|express my interest in)/gi,
+      "I am writing to apply for",
+    )
+    .replace(/<p>\s*I hope this email finds you (?:well|in good health)[.,]?\s*/gi, "<p>")
+    .replace(/I hope this email finds you (?:well|in good health)[.,]?\s*/gi, "");
+
+  // 3. Ensure section title is "Relevant Info" if AI used "Candidate Screening Details" or similar
   cleaned = cleaned.replace(
     /(?:<p>\s*)?<strong>\s*(?:Candidate\s+Screening\s+(?:Details|Summary)|Screening\s+Details)\s*:?\s*<\/strong>(?:\s*<\/p>)?/gi,
-    "<p><strong>Relevant Info:</strong></p>"
+    "<p><strong>Relevant Info:</strong></p>",
   );
 
-  // 3. Ensure list items have values bolded if AI left them plain
-  cleaned = cleaned.replace(/<li>([^:<]+:\s*)([^<]+)<\/li>/gi, (_, prefix, val) => {
-    return `<li>${prefix}<strong>${val.trim()}</strong></li>`;
-  });
-  cleaned = cleaned.replace(/<li>(<strong>.*?<\/strong>:?\s*)([^<]+)<\/li>/gi, (_, prefix, val) => {
-    return `<li>${prefix}<strong>${val.trim()}</strong></li>`;
-  });
+  // 4. Ensure list items have values bolded if AI left them plain
+  cleaned = cleaned.replace(
+    /<li>([^:<]+:\s*)([^<]+)<\/li>/gi,
+    (_, prefix, val) => {
+      return `<li>${prefix}<strong>${val.trim()}</strong></li>`;
+    },
+  );
+  cleaned = cleaned.replace(
+    /<li>(<strong>.*?<\/strong>:?\s*)([^<]+)<\/li>/gi,
+    (_, prefix, val) => {
+      return `<li>${prefix}<strong>${val.trim()}</strong></li>`;
+    },
+  );
 
-  // 4. Ensure contact number is placed below the candidate name in the sign-off if available
+  // 5. Ensure contact number is placed below the candidate name in the sign-off if available
   if (mobile && mobile.trim()) {
     const trimmedMobile = mobile.trim();
     if (!cleaned.includes(trimmedMobile)) {
@@ -190,14 +235,17 @@ export function cleanApplicationBody(body: string, candidateName?: string, mobil
         (match, p1, p2) => {
           if (p1.includes(trimmedMobile)) return match;
           return `${p1}<br>${trimmedMobile}${p2}`;
-        }
+        },
       );
     }
   }
 
-  // 5. If official candidate name is provided, replace generic placeholders
+  // 6. If official candidate name is provided, replace generic placeholders
   if (candidateName && candidateName.trim()) {
-    cleaned = cleaned.replace(/\[(?:Candidate Name|Your Name|Candidate's Name|Name)\]/gi, candidateName.trim());
+    cleaned = cleaned.replace(
+      /\[(?:Candidate Name|Your Name|Candidate's Name|Name)\]/gi,
+      candidateName.trim(),
+    );
   }
 
   return cleaned.trim();
@@ -214,10 +262,10 @@ export async function tailorApplication(
   jobDesc: string,
   template: string,
   profile?: CandidateProfile,
-  role?: UserRole
+  role?: UserRole,
+  feedback?: string,
 ): Promise<TailoredApplication> {
-  const model =
-    process.env["OPENROUTER_MODEL"] ?? "openai/gpt-4o-mini";
+  const model = process.env["OPENROUTER_MODEL"] ?? "openai/gpt-4o-mini";
 
   const callAI = async (prompt: string): Promise<string> => {
     const response = await client.chat.completions.create({
@@ -233,25 +281,35 @@ export async function tailorApplication(
 
   let raw: string;
   try {
-    raw = await callAI(buildPrompt(resumeText, jobDesc, template, profile, role));
+    raw = await callAI(
+      buildPrompt(resumeText, jobDesc, template, profile, role, feedback),
+    );
     const parsed = JSON.parse(raw) as TailoredApplication;
     if (!parsed.subject || !parsed.body) throw new Error("Missing keys");
-    parsed.body = cleanApplicationBody(parsed.body, profile?.officialName, profile?.mobile);
+    parsed.body = cleanApplicationBody(
+      parsed.body,
+      profile?.officialName,
+      profile?.mobile,
+    );
     return parsed;
   } catch {
     // Retry once with an even more explicit instruction
     const retryPrompt =
-      buildPrompt(resumeText, jobDesc, template, profile, role) +
+      buildPrompt(resumeText, jobDesc, template, profile, role, feedback) +
       "\n\nIMPORTANT: Your previous response failed JSON parsing. Respond ONLY with a raw JSON object, nothing else.";
 
     raw = await callAI(retryPrompt);
     const parsed = JSON.parse(raw) as TailoredApplication;
     if (!parsed.subject || !parsed.body) {
       throw new Error(
-        "AI failed to produce a valid application after two attempts. Please try again."
+        "AI failed to produce a valid application after two attempts. Please try again.",
       );
     }
-    parsed.body = cleanApplicationBody(parsed.body, profile?.officialName, profile?.mobile);
+    parsed.body = cleanApplicationBody(
+      parsed.body,
+      profile?.officialName,
+      profile?.mobile,
+    );
     return parsed;
   }
 }
@@ -263,7 +321,7 @@ export async function tailorApplication(
  */
 export async function parseJobPageWithAI(
   pageContent: string,
-  pageUrl?: string
+  pageUrl?: string,
 ): Promise<ParsedJobInfo> {
   const model = process.env["OPENROUTER_MODEL"] ?? "openai/gpt-4o-mini";
 
@@ -306,7 +364,8 @@ export async function parseJobPageWithAI(
           },
           title: {
             type: "string",
-            description: "The job title or role name advertised in this posting.",
+            description:
+              "The job title or role name advertised in this posting.",
           },
           company: {
             type: "string",
@@ -327,7 +386,10 @@ export async function parseJobPageWithAI(
       ],
       tools: [extractTool],
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      tool_choice: { type: "function", function: { name: "extract_job_info" } } as any,
+      tool_choice: {
+        type: "function",
+        function: { name: "extract_job_info" },
+      } as any,
     });
 
     const rawToolCall = response.choices[0]?.message?.tool_calls?.[0];
@@ -353,7 +415,7 @@ export async function parseJobPageWithAI(
 
     const emails = Array.isArray(args.emails)
       ? (args.emails as string[]).filter(
-          (e) => typeof e === "string" && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)
+          (e) => typeof e === "string" && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e),
         )
       : [];
 
