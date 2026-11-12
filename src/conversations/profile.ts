@@ -122,6 +122,24 @@ export async function profileFlow(
       "30 Days (Serving notice, LWD: 30th Nov)"
     );
 
+    const education = await promptField(
+      "11. Education (College / University / Degree)",
+      "education",
+      "B.Tech in Computer Science, XYZ University"
+    );
+
+    const reasonForChange = await promptField(
+      "12. Reason for Job Change",
+      "reasonForChange",
+      "Looking for career growth and technical scale"
+    );
+
+    const expectedCtc = await promptField(
+      "13. Expected CTC (Default)",
+      "expectedCtc",
+      "20 LPA"
+    );
+
     const profileData: Partial<CandidateProfile> = {
       officialName,
       mobile,
@@ -132,7 +150,10 @@ export async function profileFlow(
       currentLocation,
       preferredLocation,
       currentCtc,
+      expectedCtc,
       noticePeriod,
+      education,
+      reasonForChange,
     };
 
     await conversation.external(() =>
@@ -148,8 +169,10 @@ export async function profileFlow(
         `💼 *Total Exp:* ${escapeMarkdown(totalExperience || "—")}\n` +
         `🏢 *Current Co:* ${escapeMarkdown(currentCompany || "—")}\n` +
         `📍 *Location:* ${escapeMarkdown(currentLocation || "—")} → ${escapeMarkdown(preferredLocation || "—")}\n` +
-        `💰 *Current CTC:* ${escapeMarkdown(currentCtc || "—")}\n` +
-        `⏳ *Notice Period:* ${escapeMarkdown(noticePeriod || "—")}\n\n` +
+        `💰 *CTC (Cur / Exp):* ${escapeMarkdown(currentCtc || "—")} / ${escapeMarkdown(expectedCtc || "—")}\n` +
+        `⏳ *Notice Period:* ${escapeMarkdown(noticePeriod || "—")}\n` +
+        `🎓 *Education:* ${escapeMarkdown(education || "—")}\n` +
+        `🎯 *Reason for Change:* ${escapeMarkdown(reasonForChange || "—")}\n\n` +
         "_💡 Note: Role-specific details (Relevant Experience, Expected CTC, Holding Offer) are configured per role under /roles._\n\n" +
         "You can view your profile with /candidate\\_profile or edit with /edit\\_profile.",
       { parse_mode: "Markdown", reply_markup: HOME_KEYBOARD }

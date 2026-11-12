@@ -218,20 +218,35 @@ Respond ONLY with a JSON object:
 // ── Node 3: Evaluate Screening Needs ────────────────────────────────────────
 
 const ALL_METRIC_FIELDS = [
+  "totalExperience",
+  "relevantExperience",
+  "currentCompany",
+  "noticePeriod",
+  "currentCtc",
+  "expectedCtc",
+  "currentLocation",
+  "preferredLocation",
+  "education",
+  "reasonForChange",
+  "holdingOffer",
   "officialName",
   "dob",
   "mobile",
   "emailId",
+] as const;
+
+const DEFAULT_SCREENING_FIELDS = [
   "totalExperience",
+  "relevantExperience",
   "currentCompany",
+  "noticePeriod",
+  "currentCtc",
+  "expectedCtc",
   "currentLocation",
   "preferredLocation",
-  "currentCtc",
-  "noticePeriod",
-  "relevantExperience",
-  "expectedCtc",
-  "holdingOffer",
-] as const;
+  "education",
+  "reasonForChange",
+];
 
 async function evaluateScreeningNeeds(
   state: ApplyState,
@@ -239,11 +254,11 @@ async function evaluateScreeningNeeds(
   const jd = state.jobDescription || state.rawInput;
 
   if (!jd || jd.length < 30) {
-    // No meaningful JD — don't include any screening metrics
-    return { requestedMetrics: [], status: "screening_done" };
+    // General / title-only input — provide standard screening metrics
+    return { requestedMetrics: DEFAULT_SCREENING_FIELDS, status: "screening_done" };
   }
 
-  const prompt = `You are an HR screening analyst. Given a Job Description, determine which candidate screening fields the recruiter is likely to ask for or would benefit from receiving upfront.
+  const prompt = `You are an HR screening analyst. Given a Job Description, determine which candidate screening fields should be provided to the recruiter in the application's "Relevant Info" section.
 
 JOB DESCRIPTION:
 ${jd.slice(0, 3000)}
@@ -252,19 +267,21 @@ AVAILABLE FIELDS:
 ${ALL_METRIC_FIELDS.join(", ")}
 
 Field descriptions:
+- totalExperience: Overall years of work experience
+- relevantExperience: Experience relevant to the specific role
+- currentCompany: Current employer / Organization
+- noticePeriod: Notice period or last working day
+- currentCtc: Current compensation / CTC
+- expectedCtc: Expected compensation / CTC
+- currentLocation: Current city / location
+- preferredLocation: Preferred work locations
+- education: Degree and College / University
+- reasonForChange: Reason for seeking a new role
+- holdingOffer: Whether candidate is holding an offer
 - officialName: Full legal name
 - dob: Date of birth
 - mobile: Contact phone number
 - emailId: Contact email
-- totalExperience: Overall years of work experience
-- currentCompany: Current employer
-- currentLocation: Current city/location
-- preferredLocation: Preferred work locations
-- currentCtc: Current compensation/CTC
-- noticePeriod: Notice period or last working day
-- relevantExperience: Experience relevant to the specific role
-- expectedCtc: Expected/desired compensation
-- holdingOffer: Whether candidate is holding another offer
 
 Respond ONLY with a JSON object:
 {
@@ -273,13 +290,8 @@ Respond ONLY with a JSON object:
 }
 
 Rules:
-- Only include fields the JD explicitly or strongly implies are needed
-- Always include totalExperience and relevantExperience if the JD mentions experience requirements
-- Include currentCtc/expectedCtc only if the JD discusses compensation/salary
-- Include noticePeriod if JD mentions urgency, immediate joining, or notice period
-- Include currentLocation/preferredLocation if JD mentions location or remote/onsite
-- Do NOT include dob, mobile, emailId, officialName unless the JD specifically asks
-- If the JD is vague/general, return only ["totalExperience", "relevantExperience"]`;
+- Standard recruiter screening fields (totalExperience, relevantExperience, currentCompany, noticePeriod, currentCtc, expectedCtc, currentLocation, preferredLocation, education, reasonForChange) should be included by default whenever relevant to give the recruiter a complete picture.
+- Include officialName, dob, mobile, emailId, or holdingOffer only if specifically relevant or asked by the JD.`;
 
   try {
     const llm = getLLM();
@@ -298,11 +310,14 @@ Rules:
       (ALL_METRIC_FIELDS as readonly string[]).includes(f),
     );
 
-    return { requestedMetrics: valid, status: "screening_done" };
-  } catch {
-    // Fallback: include common fields
     return {
-      requestedMetrics: ["totalExperience", "relevantExperience", "noticePeriod"],
+      requestedMetrics: valid.length > 0 ? valid : DEFAULT_SCREENING_FIELDS,
+      status: "screening_done",
+    };
+  } catch {
+    // Fallback: include standard screening fields
+    return {
+      requestedMetrics: DEFAULT_SCREENING_FIELDS,
       status: "screening_done",
     };
   }
@@ -320,13 +335,14 @@ function filterProfileByMetrics(
   requestedMetrics: string[],
 ): { filteredProfile?: CandidateProfile | undefined; filteredRole?: UserRole | undefined } {
   if (requestedMetrics.length === 0) {
-    return {};
+    return { filteredProfile: profile, filteredRole: role };
   }
 
   const profileFields = new Set([
     "officialName", "dob", "mobile", "emailId",
     "totalExperience", "currentCompany", "currentLocation",
-    "preferredLocation", "currentCtc", "noticePeriod",
+    "preferredLocation", "currentCtc", "expectedCtc",
+    "noticePeriod", "education", "reasonForChange",
   ]);
   const roleFields = new Set(["relevantExperience", "expectedCtc", "holdingOffer"]);
 
@@ -341,7 +357,7 @@ function filterProfileByMetrics(
           profile[field as keyof CandidateProfile];
       }
     }
-    // If nothing was actually populated, don't pass it
+    // If nothing was actually populated, keep original or undefined
     if (Object.keys(filteredProfile).length === 0) filteredProfile = undefined;
   }
 
@@ -364,11 +380,26 @@ async function generateEmail(
   const resumeText = state.selectedResume?.text ?? "";
   const jd = state.jobDescription || state.rawInput;
 
-  const { filteredProfile, filteredRole } = filterProfileByMetrics(
+  let { filteredProfile, filteredRole } = filterProfileByMetrics(
     state.candidateProfile,
     state.selectedRole,
     state.requestedMetrics ?? [],
   );
+
+  // Ensure contact number and name are always available for the email sign-off
+  if (state.candidateProfile) {
+    filteredProfile = filteredProfile ? { ...filteredProfile } : ({} as CandidateProfile);
+    if (state.candidateProfile.mobile && !filteredProfile.mobile) {
+      filteredProfile.mobile = state.candidateProfile.mobile;
+    }
+    if (state.candidateProfile.officialName && !filteredProfile.officialName) {
+      filteredProfile.officialName = state.candidateProfile.officialName;
+    }
+  }
+
+  if (state.userSmtp?.senderName && filteredProfile && !filteredProfile.officialName) {
+    filteredProfile.officialName = state.userSmtp.senderName;
+  }
 
   try {
     const application = await tailorApplication(

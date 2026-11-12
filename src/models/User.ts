@@ -32,11 +32,14 @@ export interface CandidateProfile {
   mobile?: string | undefined;             // Contact number
   emailId?: string | undefined;            // Contact email
   totalExperience?: string | undefined;    // Overall work experience (e.g. "5 Years")
-  currentCompany?: string | undefined;     // Current employer
+  currentCompany?: string | undefined;     // Current employer / Current Organization
   currentLocation?: string | undefined;    // Current city
   preferredLocation?: string | undefined;  // Preferred work locations
   currentCtc?: string | undefined;         // Current CTC
+  expectedCtc?: string | undefined;        // Expected CTC (global default fallback)
   noticePeriod?: string | undefined;       // Notice period / LWD
+  education?: string | undefined;          // College / University / Degree
+  reasonForChange?: string | undefined;    // Reason for job change
   updatedAt?: Date | undefined;
 }
 

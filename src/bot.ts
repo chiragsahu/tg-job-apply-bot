@@ -420,7 +420,10 @@ async function main(): Promise<void> {
       `*Current Location:* ${escapeMarkdown(profile.currentLocation || "—")}`,
       `*Preferred Location:* ${escapeMarkdown(profile.preferredLocation || "—")}`,
       `*Current CTC:* ${escapeMarkdown(profile.currentCtc || "—")}`,
-      `*Notice Period / LWD:* ${escapeMarkdown(profile.noticePeriod || "—")}\n`,
+      `*Expected CTC:* ${escapeMarkdown(profile.expectedCtc || "—")}`,
+      `*Notice Period / LWD:* ${escapeMarkdown(profile.noticePeriod || "—")}`,
+      `*Education (College/University):* ${escapeMarkdown(profile.education || "—")}`,
+      `*Reason for Job Change:* ${escapeMarkdown(profile.reasonForChange || "—")}\n`,
       `_💡 Note: Role-specific details (Relevant Experience, Expected CTC, Holding Offer) are configured per role under /roles._`,
     ];
 

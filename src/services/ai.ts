@@ -24,37 +24,76 @@ export interface TailoredApplication {
   body: string; // HTML string using <p>, <strong>, <ul><li> only
 }
 
-function formatCandidateDetails(
+export function formatCandidateDetails(
   profile?: CandidateProfile,
   role?: UserRole
 ): string {
   if (!profile && !role) return "";
   const lines: string[] = [];
 
-  // Global candidate profile details
-  if (profile?.officialName) lines.push(`Official Name (as per Govt ID): ${profile.officialName}`);
+  // 1. Total / Relevant Experience
+  const totalExp = profile?.totalExperience;
+  const relExp = role?.relevantExperience;
+  if (totalExp && relExp) {
+    lines.push(`Total / Relevant Experience: ${totalExp} / ${relExp}`);
+  } else if (totalExp) {
+    lines.push(`Total Experience: ${totalExp}`);
+  } else if (relExp) {
+    lines.push(`Relevant Experience: ${relExp}`);
+  }
+
+  // 2. Current Organization
+  if (profile?.currentCompany) {
+    lines.push(`Current Organization: ${profile.currentCompany}`);
+  }
+
+  // 3. Notice Period
+  if (profile?.noticePeriod) {
+    lines.push(`Notice Period: ${profile.noticePeriod}`);
+  }
+
+  // 4. Current / Expected CTC
+  const currentCtc = profile?.currentCtc;
+  const expectedCtc = role?.expectedCtc ?? profile?.expectedCtc;
+  if (currentCtc && expectedCtc) {
+    lines.push(`Current / Expected CTC: ${currentCtc} / ${expectedCtc}`);
+  } else if (currentCtc) {
+    lines.push(`Current CTC: ${currentCtc}`);
+  } else if (expectedCtc) {
+    lines.push(`Expected CTC: ${expectedCtc}`);
+  }
+
+  // 5. Current / Preferred Location
+  const curLoc = profile?.currentLocation;
+  const prefLoc = profile?.preferredLocation;
+  if (curLoc && prefLoc) {
+    lines.push(`Current / Preferred Location: ${curLoc} / ${prefLoc}`);
+  } else if (curLoc) {
+    lines.push(`Current Location: ${curLoc}`);
+  } else if (prefLoc) {
+    lines.push(`Preferred Location: ${prefLoc}`);
+  }
+
+  // 6. Education (College/University)
+  if (profile?.education) {
+    lines.push(`Education (College/University): ${profile.education}`);
+  }
+
+  // 7. Reason for Job Change
+  if (profile?.reasonForChange) {
+    lines.push(`Reason for Job Change: ${profile.reasonForChange}`);
+  }
+
+  // 8. Role-specific additional application details
+  if (role?.holdingOffer) {
+    lines.push(`Holding Offer: ${role.holdingOffer}`);
+  }
+
+  // 9. Candidate identification details if present
+  if (profile?.officialName) lines.push(`Official Name: ${profile.officialName}`);
   if (profile?.emailId) lines.push(`Email: ${profile.emailId}`);
   if (profile?.mobile) lines.push(`Mobile: ${profile.mobile}`);
   if (profile?.dob) lines.push(`DOB: ${profile.dob}`);
-  if (profile?.totalExperience) lines.push(`Total Experience: ${profile.totalExperience}`);
-  if (profile?.currentCompany) lines.push(`Current Company: ${profile.currentCompany}`);
-  if (profile?.currentLocation) lines.push(`Current Location: ${profile.currentLocation}`);
-  if (profile?.preferredLocation) lines.push(`Preferred Location: ${profile.preferredLocation}`);
-  if (profile?.currentCtc) lines.push(`Current CTC: ${profile.currentCtc}`);
-  if (profile?.noticePeriod) lines.push(`Notice Period / LWD: ${profile.noticePeriod}`);
-
-  // Role-specific application details
-  if (role) {
-    if (role.relevantExperience) {
-      lines.push(`Relevant Experience for ${role.name}: ${role.relevantExperience}`);
-    }
-    if (role.expectedCtc) {
-      lines.push(`Expected CTC (for ${role.name}): ${role.expectedCtc}`);
-    }
-    if (role.holdingOffer) {
-      lines.push(`Holding Offer: ${role.holdingOffer}`);
-    }
-  }
 
   if (lines.length === 0) return "";
 
@@ -69,6 +108,12 @@ function buildPrompt(
   role?: UserRole
 ): string {
   const candidateDetailsBlock = formatCandidateDetails(profile, role);
+  const candidateName = profile?.officialName || "[Candidate Name]";
+  const candidateMobile = profile?.mobile;
+
+  const signOffExample = candidateMobile
+    ? `<p>Best regards,<br>${candidateName}<br>${candidateMobile}</p>`
+    : `<p>Best regards,<br>${candidateName}</p>`;
 
   return `You are a professional job application assistant.
 
@@ -100,13 +145,16 @@ Rules:
 - Keyword & Skill Alignment: Carefully analyze the Job Description to extract its core requirements, technical keywords, tools, and responsibilities. Cross-reference them with the candidate's Resume and skills. You MUST explicitly mention these matching relevant keywords and skills in the email content, directly aligning the candidate's hands-on experience and achievements with the employer's needs.
 - Technical Skills Formatting: Make key technical skills, tools, frameworks, and technologies (such as CI/CD, Docker, Kubernetes, AWS, languages/frameworks, and matching JD keywords) bold using <strong> tags (e.g. <strong>CI/CD</strong>, <strong>Docker</strong>) throughout the email body so they stand out boldly in black formatting.
 - Section Name: If candidate screening details/relevant info are provided, title this section strictly as "Relevant Info" (e.g., <p><strong>Relevant Info:</strong></p>). Do NOT name it "Candidate Screening Details".
-- Bold Values in Relevant Info: Present the Relevant Info as a bulleted list (<ul><li>). For every item, bold the value using <strong> (e.g., <li>Total Experience: <strong>5 Years</strong></li>, <li>Relevant Experience: <strong>3+ Years</strong></li>, <li>Notice Period / LWD: <strong>15 Days</strong></li>, <li>Current Location: <strong>Bengaluru</strong></li>, <li>Expected CTC: <strong>Negotiable</strong></li>).
-- Strictly No Generic Interview Call-to-Action: Do NOT generate filler or boilerplate closing interview-request paragraphs after the content (such as "I would welcome the opportunity to discuss how my expertise aligns with your requirements. Please let me know a convenient time for an interview." or similar variants). Conclude directly with a polite sign-off (e.g., <p>Best regards,<br>[Candidate Name]</p>).
+- Bold Values in Relevant Info: Present the Relevant Info as a bulleted list (<ul><li>). For every item, bold the value using <strong> (e.g., <li>Total / Relevant Experience: <strong>5 Years / 3.5 Years</strong></li>, <li>Current Organization: <strong>Acme Tech Pvt Ltd</strong></li>, <li>Notice Period: <strong>30 Days</strong></li>, <li>Current / Expected CTC: <strong>14 LPA / 20 LPA</strong></li>, <li>Current / Preferred Location: <strong>Bengaluru / Remote</strong></li>, <li>Education (College/University): <strong>B.Tech in CSE, XYZ University</strong></li>, <li>Reason for Job Change: <strong>Career Growth</strong></li>).
+- Strictly No Generic Interview Call-to-Action: Do NOT generate filler or boilerplate closing interview-request paragraphs after the content (such as "I would welcome the opportunity to discuss how my expertise aligns with your requirements. Please let me know a convenient time for an interview." or similar variants).
+- Sign-off: Conclude directly with a polite sign-off:
+  ${signOffExample}
+  CRITICAL: If a contact number (${candidateMobile || "none"}) is available, you MUST place it directly on the line below the candidate's name.
 - Subject must reference the specific role or company if identifiable from the JD.
 - Respond ONLY with the JSON object. No markdown fences, no commentary.`;
 }
 
-export function cleanApplicationBody(body: string): string {
+export function cleanApplicationBody(body: string, candidateName?: string, mobile?: string): string {
   let cleaned = body;
 
   // 1. Remove unwanted boilerplate closing sentences / paragraphs
@@ -132,6 +180,25 @@ export function cleanApplicationBody(body: string): string {
   cleaned = cleaned.replace(/<li>(<strong>.*?<\/strong>:?\s*)([^<]+)<\/li>/gi, (_, prefix, val) => {
     return `<li>${prefix}<strong>${val.trim()}</strong></li>`;
   });
+
+  // 4. Ensure contact number is placed below the candidate name in the sign-off if available
+  if (mobile && mobile.trim()) {
+    const trimmedMobile = mobile.trim();
+    if (!cleaned.includes(trimmedMobile)) {
+      cleaned = cleaned.replace(
+        /(<p>\s*(?:Best regards|Warm regards|Regards|Sincerely|Thank you|Thanks & regards)[\s\S]*?)(<\/p>)/i,
+        (match, p1, p2) => {
+          if (p1.includes(trimmedMobile)) return match;
+          return `${p1}<br>${trimmedMobile}${p2}`;
+        }
+      );
+    }
+  }
+
+  // 5. If official candidate name is provided, replace generic placeholders
+  if (candidateName && candidateName.trim()) {
+    cleaned = cleaned.replace(/\[(?:Candidate Name|Your Name|Candidate's Name|Name)\]/gi, candidateName.trim());
+  }
 
   return cleaned.trim();
 }
@@ -169,7 +236,7 @@ export async function tailorApplication(
     raw = await callAI(buildPrompt(resumeText, jobDesc, template, profile, role));
     const parsed = JSON.parse(raw) as TailoredApplication;
     if (!parsed.subject || !parsed.body) throw new Error("Missing keys");
-    parsed.body = cleanApplicationBody(parsed.body);
+    parsed.body = cleanApplicationBody(parsed.body, profile?.officialName, profile?.mobile);
     return parsed;
   } catch {
     // Retry once with an even more explicit instruction
@@ -184,7 +251,7 @@ export async function tailorApplication(
         "AI failed to produce a valid application after two attempts. Please try again."
       );
     }
-    parsed.body = cleanApplicationBody(parsed.body);
+    parsed.body = cleanApplicationBody(parsed.body, profile?.officialName, profile?.mobile);
     return parsed;
   }
 }
